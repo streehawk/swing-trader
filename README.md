@@ -4,9 +4,9 @@
 [![Railway](https://img.shields.io/badge/Deploy-Railway-000000?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-> **Honest watchlist** for quality-compounder investing. Filters quality businesses in material drawdown with near catalyst — and surfaces them WITHOUT claiming edge ranking. Execution is always manual by the user in T212. Tax-aware (IRS Jovem).
+> **Swing setup engine.** Finds established uptrends pausing into a defined trigger and emits a COMPLETE trade plan — entry (buy stop), stop (1.5×ATR), target (2.5×ATR), 15-day time stop, risk-based size. Execution is always manual by the user in T212.
 >
-> The system was ML-ranked through Q2 2026. After backtest validation (F.5) showed the rule-based dislocation_z scorer failed its binding gate (top-decile −1.09pp vs SPY, worst-fold −22.48pp in 2025), the production default switched to a watchlist that doesn't pretend to know which name has the most alpha. See [history](#-history-why-watchlist-and-not-ranking).
+> **Phase 1 pivot (2026-07-27):** the default scorer changed from `watchlist` to `swing`. The watchlist answered a multi-month accumulation question ("which quality businesses are cheap?") via a binding `drawdown ≥ 25%` filter — structurally the opposite posture to swing trading, which trades *with* trend. The watchlist remains available at `DIPRADAR_SCORING_MODE=watchlist` but nothing selects it automatically. See [history](#-history-why-watchlist-and-not-ranking) for the prior pivot.
 
 ---
 
@@ -14,7 +14,8 @@
 
 | Component | Mode | Role |
 |---|---|---|
-| **Watchlist scorer** | ✅ Default (`DIPRADAR_SCORING_MODE=watchlist`) | Quality + DD ≥ 25% + catalyst ≤ 30d. Sector-relative shown as column, **not** used to filter. |
+| **Swing setup engine** | ✅ **Default** (`DIPRADAR_SCORING_MODE=swing`) | Uptrend + PULLBACK/BREAKOUT trigger → entry/stop/target/time stop + risk-based size. Earnings inside the window = hard reject. |
+| **Watchlist scorer** | ⚠️ Long-term book (`DIPRADAR_SCORING_MODE=watchlist`) | Quality + DD ≥ 25% + catalyst ≤ 30d. Previous default; kept for the long-term thesis. |
 | **CORE radar** | ✅ Functional, rule-based | 230 curated quality compounders; provides the signals the watchlist filters |
 | **DIP scanner** | ✅ Functional | Detects abrupt drops vs sector; ML inert (`DIPRADAR_USE_ML_SCORE=0` default) |
 | **Sector rotation** | ✅ Functional | 24 ETFs ranked monthly, tax-aware via IRS Jovem 7% gate |
@@ -35,7 +36,7 @@
 
 | Command | What it does |
 |---|---|
-| `/scan_now` | Watchlist now: list of qualifiers, DD-sorted, with sector-relative column + news headlines. **No ranking by alpha.** |
+| `/scan_now` | Swing setups now: entry/stop/target/size per name, R:R-sorted. `--full` scans the broad universe. |
 | `/analisar <TICKER>` | Full analysis + watchlist criteria check (✅/❌ per criterion). |
 | `/regime` | Market regime score + cash-buffer guidance (FROTHY/NEUTRAL/PANIC). |
 | `/cash_status` | Compact regime + portfolio + concrete action recommendation. |
@@ -54,7 +55,7 @@
 | `/carteira` | Real-time portfolio snapshot. |
 | `/buy TICK PRICE SHARES` / `/sell TICK PRICE [SHARES]` | Manual position updates. |
 
-Buckets: `CORE` (hold-for-life) · `ROTATION` (sector ETFs) · `MOMENTUM` (breakout holdings) · `DIP` (active recovery)
+Buckets: `SWING` (plan-managed trades) · `CORE` (hold-for-life) · `ROTATION` (sector ETFs) · `MOMENTUM` (breakout holdings) · `DIP` (active recovery)
 
 ### Sectors and rotation
 
@@ -70,6 +71,7 @@ Buckets: `CORE` (hold-for-life) · `ROTATION` (sector ETFs) · `MOMENTUM` (break
 | Command | What it does |
 |---|---|
 | `/conviction list` | Active positions with trailing stops. |
+| `/conviction plan TICKER ENTRY STOP TARGET [DIAS]` | Attach a swing plan (marks the position `SWING`, enables mechanical exits). |
 | `/conviction TICKER` | Deep dive. |
 | `/conviction close TICKER PRICE [reason]` | Close a position. |
 | `/conviction transition TICKER TYPE` | Change bucket (DIP→MOMENTUM→CORE). |
@@ -83,28 +85,31 @@ Buckets: `CORE` (hold-for-life) · `ROTATION` (sector ETFs) · `MOMENTUM` (break
 | `/admin_pipeline_status` | Last cron firings + retrains. |
 | `/health` | System dashboard. |
 | `/backtest` | Backtest summary. |
+| `python scripts/run_swing_validation.py` | Re-run the Phase 4 binding gate (CLI, ~5 min for 240 tickers). |
 | `/admin_disk` | Disk usage by artifact. |
 | `/admin_retrain` | Retrain DIP model (ML inert in watchlist mode but command preserved). |
 | `/admin_momentum_retrain` | **RAISES** retirement error (Momentum ML retired). |
 
 ---
 
-## 💰 `/cash` in watchlist mode
+## 💰 `/cash` in swing mode
 
 ```
 /cash 1050
 ```
 
-1. Reads current portfolio + cash inflow + market regime.
-2. Computes regime cash buffer (e.g. NEUTRAL → 20% of inflow held).
-3. Pulls the watchlist (names that pass quality + DD ≥ 25% + catalyst ≤ 30d).
-4. Allocates **equal-weight** across qualifiers, respecting 30% per-ticker concentration cap.
-5. Shows each qualifier with full criteria breakdown + **vs sector** column for visual triage.
-6. Persists `watchdog_state.json` so the daily watchdog cron knows what's held.
+1. Checks the **weekly circuit breaker** first (plan rule 9): down 6% this week → stop trading, review. Setups are not even shown, so the rule cannot be talked out of.
+2. Checks the **market regime**: SPY below SMA50/SMA200 → no new longs today.
+3. Sizes each setup so a stop-out costs exactly 1% of the pool: `shares = floor(pool × 1% / (entry − stop))`. **Rounded down** — rounding up would breach the 1% rule on every trade.
+4. Applies the caps in order — max 2 open positions → portfolio heat → cash on hand. A cap cuts the *weakest* plans, never an arbitrary slice.
+5. Emits each trade as a complete **OTOCO bracket** (order A entry stop-limit, B take-profit, C stop-loss) ready to place.
+6. Persists `watchdog_state.json` + `last_cash_proposal.json` (with entry/stop/target, so the nightly sync can reattach the plan and a later fill can be judged against it).
 
-**No edge-weighted Kelly. No alpha promise. Equal weight + concentration cap.** The user decides which names have a story; the system filters for the universe that's worth considering.
+**Why not equal weight:** €500 in a name stopped at −3% risks €15; the same €500 in a name stopped at −8% risks €40. Equal weight is incoherent once stop distances differ. Sizing off the stop is what makes a losing streak survivable and results comparable in R.
 
-Empty watchlist day → suggestion is "hold cash" — there's no list to allocate against.
+No setups today → suggestion is "hold cash". Swing does not force trades: without uptrend + trigger + R:R, the correct position is no position.
+
+*(`DIPRADAR_SCORING_MODE=watchlist` still runs the previous equal-weight allocation across watchlist qualifiers with a 30% concentration cap.)*
 
 ---
 
@@ -116,13 +121,13 @@ Empty watchlist day → suggestion is "hold cash" — there's no list to allocat
 | US EOD scan | 21h15 Mon-Fri | DIP + thesis degradation + recovery + weekly DIP scan |
 | Momentum scanner | 17h50 + 21h30 Mon-Fri | Rule-based breakout alerts |
 | Conviction daily | 22h05 Mon-Fri | CORE/MOMENTUM/DIP trailing-stop monitor |
-| **Watchlist watchdog** | **18h00 Mon-Fri** | **Push notification when a NEW name enters the watchlist (and held_cash > €100)** |
+| **Swing watchdog** | **22h10 Mon-Fri** | **Push when a NEW setup appears — carries the full plan (entry/stop/target) for the NEXT session. Re-pushes when a known setup's entry drifts ≥ 2%.** |
 | Heartbeat | 09h00 Mon-Fri | Bot alive check |
 | Daily alert reset | 06h00 daily | Reset alerted_today.json |
 | Backup | 23h30 daily | data/ backup |
 
 The **watchlist watchdog** is the answer to "auto-alert when something becomes a good investment":
-- Runs daily at 18h Lisbon
+- Runs daily at 22h10 Lisbon — **after the US close (21h00)**, so entries are derived from a completed daily bar. At the old 18h00 slot the bar was still forming and the pushed levels could still move before the bell.
 - Scans the CORE universe through the watchlist criteria
 - If a ticker NOT in `deployed_tickers` and NOT in `notified_tickers` qualifies → push notification with the full criteria breakdown + headlines
 - "Good investment" = passes the watchlist filter, nothing more, nothing less. No alpha promise.
@@ -136,10 +141,85 @@ The **watchlist watchdog** is the answer to "auto-alert when something becomes a
 `core/scoring_dispatch.py` — `ScoringSession` reads `DIPRADAR_SCORING_MODE` ONCE per scan. Three modes:
 
 ```python
-DIPRADAR_SCORING_MODE=watchlist     # default — honest filter
+DIPRADAR_SCORING_MODE=swing         # DEFAULT — swing setup engine
+DIPRADAR_SCORING_MODE=watchlist     # long-term honest filter (previous default)
 DIPRADAR_SCORING_MODE=composite     # legacy heuristic z-score
 DIPRADAR_SCORING_MODE=dislocation   # experimental, failed F.5 gate
 ```
+
+### Swing setup engine (v2 — Trading Plan §4)
+
+`core/swing_setups.py` — the seven-gate entry checklist, evaluated in order. Any failure = no trade. Full spec: **[`Phase1_Entry_Filter_Spec.md`](Phase1_Entry_Filter_Spec.md)**.
+
+| # | Gate | Rule |
+|---|---|---|
+| 1 | **Market regime** | SPY > its own SMA50 **and** SMA200. A hostile market overrides any setup. Fails **closed**. |
+| 2 | Universe | price ≥ $10, avg volume ≥ **1M shares**, not in the exclusion list (`PLTR`). Fails **closed** on unknown volume. |
+| 3 | Earnings | no report inside the holding window (covers the plan's "not within 10 calendar days" floor). |
+| 4 | Uptrend | close > SMA50 > SMA200, SMA50 rising vs 20 bars ago. |
+| 5 | **Relative strength** | stock's 63-bar return > SPY's. Buy leaders, not laggards. |
+| 6 | **Valid pause** | pullback 1–3×ATR off the 20d high, on **declining volume**, never closing below SMA50. |
+| 7 | Structure ≥ 2R | entry above the pause high, stop below the pause low (or entry − 1 ATR), target at 2R — and that 2R move must be plausible (≤ 4×ATR). |
+
+**The plan:**
+```
+entry  = pause high × 1.001     (buy-stop trigger)
+limit  = entry × 1.002          (slippage cap)
+stop   = min(pause low × 0.999, entry − 1 × ATR)   ( = 1R )
+target = entry + 2 × risk
+time   = 15 trading days
+```
+
+**BREAKOUT setups were removed in v2**, per the plan's own journal lesson: *"a breakout chased the day after a strong run is prone to shakeout… wait for the pullback entry instead of chasing the high."*
+
+Bold rows are new in v2 and exist because v1 lacked them and failed validation — see [the verdict](#-phase-4-verdict-the-v2-filters-help-but-the-edge-is-still-zero).
+
+**Cost profile:** gates 1-4 read only OHLCV bars — no yfinance `info`, no fundamentals, no SEC, and **no LLM**. The earnings/sector lookups run only on names that already triggered (typically 0-8 of several hundred). The LLM drop-attribution classifier is not invoked at all in swing mode: it exists to explain why something *fell*, and swing buys strength. This path is materially cheaper per scan than watchlist mode.
+
+**Validated and FAILED — see [Phase 4 verdict](#-phase-4-verdict-swing-entries-have-no-measured-edge) below.** Treat output as a candidate list requiring your judgement, not as an edge claim.
+
+### Swing exit engine
+
+`core/swing_exits.py` — a pure state machine shared by **both** monitors (`core/conviction_radar.py` for user-held positions, `portfolio/position_monitor.py` for bot-created ones), so the two paths cannot disagree about where a stop is.
+
+Everything is expressed in **R**, where 1R = `entry − initial stop`. R is the only unit in which a 3%-stop trade and an 8%-stop trade are comparable, and it is what Phase 4's gate is measured in.
+
+| Priority | Trigger | Rule |
+|---|---|---|
+| 1 | `SWING_STOP` / `SWING_BREAKEVEN_STOP` / `SWING_TRAIL_STOP` | price ≤ effective stop → close. The three names are distinct so a −1R loss is never reported as a trail exit. |
+| 2 | `SWING_TARGET_PARTIAL` | price ≥ target, once → sell 50%, stop lifted to at least breakeven |
+| 3 | `SWING_TIME_STOP` | `days_held ≥ time stop` → close remainder |
+| 4 | `SWING_RAISE_STOP` | stop ratcheted this tick → move the resting order in T212 |
+
+**The stop ratchets and never loosens:** initial (plan stop) → **breakeven** at MFE ≥ 1.0R.
+
+v2 matches the plan's **OTOCO bracket** (§6): order A entry, order B full-size take-profit at 2R, order C stop — B and C paired OCO. That bracket can express a break-even ratchet (modify C) but *not* a continuous trail or a half-size scale-out, so the ATR trail is **off** (`SWING_TRAIL_ENABLED=1` re-enables) and the target closes the **whole** position. The Phase 4 diagnostic found the v1 partial made no measurable difference, so nothing is lost by matching the model you can actually place.
+
+The ratchet is driven by **MFE** (max favourable excursion), not current price. Using current price would let a position that ran to +1.8R and pulled back to +0.4R silently keep its original stop — the giving-back case breakeven exists to prevent. A missing ATR skips the trail rather than guessing, so a data failure can never *loosen* a stop.
+
+**Trading days vs calendar days:** the plan's time stop is in bars (15); both position records measure age in calendar days. `trading_days_to_calendar()` converts (15 → 21), otherwise the time stop would fire ~30% early.
+
+**Mechanical exits bypass `never_sell`.** A stop you can opt out of is not a stop, and R-multiple accounting is meaningless if stops are optional.
+
+**Getting a plan onto a position:**
+- automatic — `/cash` writes entry/stop/target into `last_cash_proposal.json`; when you fill the order and the nightly auto-sync runs, the plan is reattached and the position is created as `SWING` (age-capped at `SWING_PLAN_RECOVERY_DAYS`, default 10)
+- manual — `/conviction plan TICKER ENTRY STOP TARGET [DIAS]`
+
+### Phase 3 retuned defaults
+
+These were calibrated for multi-month holds and would have managed a 15-day plan on a 120-day leash. All remain env-overridable — set them back if you run the long-term book.
+
+| Constant | Was | Now | Env var |
+|---|---|---|---|
+| Conviction ATR trail multiple | 2.5 | **1.5** | `CONVICTION_ATR_MULTIPLIER` |
+| Conviction ATR stop floor | 8% | **4%** | `CONVICTION_ATR_MIN_STOP_PCT` |
+| Conviction trail fallback | 10% | **7%** | `CONVICTION_TRAIL_FALLBACK_PCT` |
+| DIP time decay | 120d | **21d** | `CONVICTION_DIP_TIME_DECAY_DAYS` |
+| Position stop-loss | 12% | **8%** | `POSITION_STOP_LOSS_PCT` |
+| Momentum trailing stop (fallback) | 12% | **8%** | `MOMENTUM_TRAILING_STOP_PCT` |
+| Momentum ATR multiple | 2.5 (hardcoded) | **1.5** | `MOMENTUM_ATR_MULTIPLIER` |
+
+Swing exit tunables: `SWING_BREAKEVEN_AT_R` (1.0), `SWING_TRAIL_AT_R` (1.5), `SWING_TRAIL_ATR_MULT` (1.5), `SWING_PARTIAL_FRACTION` (0.5).
 
 Backward-compat: `DIPRADAR_USE_DISLOCATION=0/1` still respected for one more release (will be removed).
 
@@ -208,11 +288,34 @@ Surfaced in `/cash` header and used to compute the cash buffer in watchlist allo
 
 | Var | Default | Description |
 |---|---|---|
-| `DIPRADAR_SCORING_MODE` | `watchlist` | `watchlist` (ship) / `composite` (legacy) / `dislocation` (experimental) |
+| `DIPRADAR_SCORING_MODE` | `swing` | `swing` (ship) / `watchlist` (long-term) / `composite` (legacy) / `dislocation` (experimental) |
 | `DIPRADAR_USE_DISLOCATION` | unset | Legacy flag (=0 → composite, =1 → dislocation); deprecated, prefer `DIPRADAR_SCORING_MODE` |
 | `DIPRADAR_USE_ML_SCORE` | `0` | ML scoring inert by default (set `=1` for legacy DIP ML path) |
 | `EFFECTIVE_CGT_PCT` | `0.07` | Effective CGT (IRS Jovem 75% = 7%) |
 | `SECTOR_CONCENTRATION_CAP` | `0.35` | Sector cap (legacy reference) |
+
+### Swing mode (`DIPRADAR_SCORING_MODE=swing`)
+
+| Var | Default | Description |
+|---|---|---|
+| `SWING_RISK_PCT` | `0.01` | Risk per trade as fraction of the **swing pool** (plan rule 1) |
+| `SWING_MAX_NEW_POSITIONS` | `2` | Max open positions (plan rule 4) |
+| `SWING_MAX_HEAT` | `0.02` | Cap on total open risk (= 2 × 1%) |
+| `SWING_WEEKLY_CIRCUIT_BREAKER` | `0.06` | Weekly loss that halts trading (plan rule 9) |
+| `SWING_REGIME_GATE` | `1` | `0` disables the SPY regime gate (testing only) |
+| `SWING_MIN_PRICE` | `10.0` | Minimum share price |
+| `SWING_MIN_AVG_VOLUME` | `1000000` | 20d avg volume floor, in **shares** |
+| `SWING_EXCLUDED_TICKERS` | `PLTR` | Comma-separated permanent exclusions |
+| `SWING_RS_LOOKBACK` | `63` | Bars for the relative-strength comparison vs SPY |
+| `SWING_PULLBACK_MIN_ATR` / `_MAX_ATR` | `1.0` / `3.0` | Pause depth band |
+| `SWING_VOLUME_DECLINE_RATIO` | `1.0` | Pause volume must be ≤ this × prior average |
+| `SWING_TARGET_R_MULT` | `2.0` | Target distance in R |
+| `SWING_MIN_RR` | `2.0` | Minimum reward:risk |
+| `SWING_MAX_TARGET_ATR` | `4.0` | Reject if the 2R target exceeds this many ATR |
+| `SWING_MAX_STOP_PCT` | `0.08` | Reject if 1R exceeds this share of entry |
+| `SWING_TIME_STOP_DAYS` | `15` | Hard time stop, in trading days |
+| `SWING_EXCLUDE_EARNINGS` | `1` | `0` disables the earnings reject |
+| `SWING_EARNINGS_MIN_DAYS` | `10` | Calendar-day floor before a report |
 
 ### Risk + execution
 
@@ -245,7 +348,118 @@ Surfaced in `/cash` header and used to compute the cash buffer in watchlist allo
 2. `/cash 1050` → watchlist proposal (equal-weight across qualifiers).
 3. Execute manually in T212.
 4. `/deployed TICKER AMOUNT reason` for each actual purchase (compares to proposal).
-5. Watchdog cron at 18h Lisbon notifies if a new name enters the watchlist mid-month.
+5. Watchdog cron at 22h10 Lisbon notifies if a new name qualifies mid-month.
+
+---
+
+## 🔬 Phase 4 verdict: the v2 filters help, but the edge is still zero
+
+**Decision: REVERT** (v2, 2026-07-28). Output: `data/validation_cache/swing_validation_2026-07-28.json`.
+
+`scripts/run_swing_validation.py` replays the shipping code — `core/swing_setups.evaluate_bars` for entries, `core/swing_exits.evaluate_swing_exit` for the ratchet — bar by bar over 240 tickers, 2020-10 → 2026-06, against a gate registered before the first run. **The gate was not relaxed between v1 and v2.**
+
+### v1 → v2
+
+**Run under ticket P1-7 conditions** — see [P1-7 compliance](#p1-7-compliance) for the acceptance log.
+
+| Metric | v1 | **v2 (P1-7)** | Gate | |
+|---|---|---|---|---|
+| Trades | 4,193 | **666** | ≥ 200 | ✅ |
+| **Expectancy** | −0.017R | **−0.009R** | ≥ +0.25R | ❌ |
+| Win rate | 34.5% | **36.2%** | ≥ 40% | ❌ |
+| Avg win / loss | +1.48 / −0.80R | **+1.49 / −0.86R** | | |
+| t-stat | −0.85 | **−0.17** | ≥ 2.0 | ❌ |
+| Max drawdown | 26.3% | **12.5%** | ≤ 15% | ✅ |
+| Worst year | 2022, −0.245R | **2025, −0.280R** | ≥ −0.10R | ❌ |
+
+Per P1-7 item 4 this run holds sizing (0.75%), the Phase-3 exits (trail on, 50% partial) and the 15-bar time stop constant — **only the entry filter differs** from the baseline. Drawdown now passes, entirely because the Phase-3 trailing exits cap it; expectancy is unchanged at zero.
+
+*(As-shipped with the plan's OTOCO exits — full exit at target, no trail — the same entries give −0.023R on 741 trades at 30.2% win rate. Exits reshuffle win rate against payoff; neither configuration moves expectancy off zero.)*
+
+The filters did what they were designed to do — they cut 82% of trades, removed the 2022 bloodbath (504 trades → 21; total damage −123.5R → −5.7R), and raised the payoff ratio to 2.2:1. Expectancy did not move off zero.
+
+**Every configuration sits on its own breakeven line:**
+
+| Configuration | breakeven win rate | actual | gap |
+|---|---|---|---|
+| v1 entry, Phase-3 exits | 35.09% | 34.5% | −0.6pp |
+| **v2 entry, Phase-3 exits** | **36.60%** | **36.2%** | **−0.4pp** |
+| v2 entry, OTOCO exits | 31.16% | 30.2% | −1.0pp |
+
+Change the entry filter, change the exits, change the target multiple — the win rate moves by exactly the amount that keeps expectancy at zero. **These changes move the system along the risk/reward frontier without lifting it off it**, which is the signature of a signal carrying no directional information.
+
+### What the stop-limit costs
+
+Order A is a Stop-**Limit** (`limit = trigger + 0.2%`). Modelling it correctly — a gap beyond the limit that never returns is *no trade* — removed 35 entries. Those 35 averaged **+0.426R with a 68.6% win rate.**
+
+A stock that gaps hard through your limit and never looks back is in a powerful move: exactly the kind that runs to target. The 0.2% limit protects you from chasing bad fills and simultaneously refuses the strongest continuations. On this sample it cost **−0.020R** — the difference between v2 measured as a stop-market (−0.003R) and as the stop-limit you will actually place (−0.023R).
+
+Reported as an observation, **not** a recommendation to widen it: post-hoc parameter changes on a sample sitting at zero is precisely the "tuning to chase a result" the plan forbids.
+
+### Which gate did the work
+
+Ablation with `SWING_REGIME_GATE=0` (everything else identical):
+
+Ablation under identical P1-7 conditions — `SWING_REGIME_GATE=0`, everything else held constant:
+
+| Configuration | Expectancy | Trades | 2022 | 2026 |
+|---|---|---|---|---|
+| Regime gate **ON** | **−0.009R** | 666 | 17 trades, −3.4R | +0.133R |
+| Regime gate OFF | −0.075R | 911 | 101 trades, −20.2R | −0.171R |
+
+**The market-regime gate is worth +0.066R on its own** — by far the most valuable rule in the set, and the one that neutralised 2022 (101 trades → 17, damage −20.2R → −3.4R). Plan rule 11 earns its place; it is simply not enough alone to reach +0.25R.
+
+By year (v2, P1-7): 2021 −0.063R · 2022 −0.198R · 2023 −0.082R · 2024 **+0.154R** · 2025 **−0.280R** · 2026 **+0.133R**. Note 2025 got *worse* per trade than in v1 (−0.041R → −0.280R): the filters concentrated that year into fewer, worse trades.
+
+**Caveat on item 4:** a like-for-like v1-vs-v2 *entry* comparison is not possible — the v1 entry code was replaced, not kept behind a flag. The regime ablation above is the controlled comparison actually available; the v1 column in the headline table was measured under the older cost model and stop-market fills, so treat it as indicative, not exact.
+
+### Capacity
+
+At the plan's `max 2 open positions`, the portfolio sim took 171 of 741 signals — a **77% rejection rate**. Per-trade expectancy describes a system you cannot fully run; the trades you actually get are a first-come subset, not the best ones.
+
+### P1-7 compliance
+
+Every run now logs the ticket's acceptance criteria into its output JSON:
+
+```
+Universe : SURVIVOR (241 tickers, 0 delisted)
+           !! Every result is an UPPER BOUND, not a measured edge
+Costs    : commission $0.00/side · slippage 10bps/side on STOP fills · tick floor $0.01
+Sizing   : risk 0.75%/trade · max 2 concurrent · time stop 15 bars
+Verifying no look-ahead... PASS (19 trades compared)
+```
+
+| Item | Status |
+|---|---|
+| **1. Survivorship** | ❌ **Not fixable here** — no delisted dataset available. Ticket's fallback taken: `universe_provenance()` classifies the universe **empirically** (counts tickers whose series ends early), the type is logged, and `evaluate_gate()` downgrades any GO on a survivor universe to `GO_UPPER_BOUND_ONLY`. The bias cannot be silently forgotten. |
+| **2. Costs + slippage** | ✅ `CostModel` charges commission and slippage **separately**. Slippage 10bps/side (ticket range 5–15), floored at `max(bps, 1 tick)`, applied to **stop and market fills only** — a take-profit limit fills at your price or not at all, so charging it there would overstate costs. v1 charged nothing on stop exits, which understated them badly: a stop-out now costs **more** than 1R. |
+| **3. No look-ahead** | ✅ **Verified at runtime, not asserted.** `confirm_no_lookahead()` replays tickers, appends 40 bars of a fabricated 3× rally, and requires every already-closed trade to be byte-identical. A failure sets the verdict to `INVALID`. |
+| **4. Hold else constant** | ✅ 0.75% sizing, Phase-3 exits, 15-bar time stop — all logged in `config.exits`. ⚠️ A true v1-vs-v2 entry A/B is not possible (v1's entry code was replaced); the regime ablation is the controlled comparison available. |
+
+**Still not modelled:** real spread (the cache is OHLCV only, so slippage is a parameter not a measurement) · borrow, halts, limit-up · no PIT earnings calendar, so the backtest takes trades the live engine would reject. All inflate results.
+
+### ⚠️ Survivorship bias is NOT fixed (P1-7 item 1)
+
+`data/validation_cache/prices.parquet` carries 241 tickers and **zero of them delist** — every series runs to 2026-06-26. Its own provenance file admits it:
+
+```json
+"spine_construction": "today_list_applied_backward",
+"survivorship_inflation": true,
+"trap_avoidance": "untested"
+```
+
+The universe is today's CORE quality list projected backward. Every company that went bankrupt, was acquired, or simply deteriorated out of the quality screen between 2021 and 2026 is **absent** — and those are disproportionately the losers a pullback system would have bought into.
+
+This is the single largest unquantified error in the result, it points **upward**, and closing it needs a data source with point-in-time index membership including dead tickers (CRSP, Sharadar, Norgate — all paid). Until then, treat **every** number above as an optimistic bound: the true expectancy is below −0.009R by an unknown margin.
+
+Per the ticket's own fallback clause, the bias is now **machine-enforced rather than documented in prose**: the universe type is detected empirically and logged in every run, and the gate cannot issue an unqualified GO on a survivor universe.
+
+### What this means
+
+- The swing engine ships as a **candidate generator with disciplined risk management**, not an alpha source. No edge claim.
+- ML ranking on top of these entries is **not** authorised — that step was conditional on this gate, and layering a model over a zero-expectancy signal would repeat F.5. `DIPRADAR_USE_ML_SCORE` stays `0`.
+- Per the plan's own guardrail — *"No tuning rules mid-stream to chase a result"* — the thresholds will not be adjusted until the gate passes. v2's rules came from the written spec; the gate stayed fixed. That is the whole point.
+- Two honest options remain: a genuinely different entry hypothesis under its own pre-registered gate, or accepting that this universe and this data do not support a mechanical edge, and running the swing pool small and by hand.
 
 ---
 
@@ -283,8 +497,11 @@ DipRadar/
 ├── state.py                         # JSON persistence
 ├── config.py                        # Central config
 ├── core/
-│   ├── honest_watchlist.py         # Watchlist (default scorer)
-│   ├── scoring_dispatch.py          # One env switch, 3 modes
+│   ├── swing_setups.py             # Swing setup engine (DEFAULT scorer)
+│   ├── swing_exits.py              # Exit state machine (stop/breakeven/trail/time)
+│   ├── swing_backtest.py           # Replay engine + pre-registered gate
+│   ├── honest_watchlist.py         # Long-term watchlist (previous default)
+│   ├── scoring_dispatch.py          # One env switch, 4 modes
 │   ├── dislocation_score.py         # Experimental rule-based scorer (F.5 failed)
 │   ├── composite_score.py           # Legacy heuristic z-score
 │   ├── core_radar.py                # Quality compounder screening

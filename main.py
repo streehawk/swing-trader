@@ -2215,6 +2215,7 @@ def _build_allocation_appendix(symbol: str) -> str:
             suggested_eur = allocs.get(symbol)
 
         engine_tag = {
+            "swing":       "⚡ swing",
             "watchlist":   "📋 watchlist",
             "dislocation": "🧠 dislocation_z (experimental)",
             "composite":   "📐 composite_z (legacy)",
@@ -2333,7 +2334,103 @@ def run_watchdog_scan() -> None:
         # and respond with another.
         session = ScoringSession()
 
-        # ── Watchlist mode (default after F.5 REVERT) ─────────────────
+        # ── Swing mode (default since Phase 1, 2026-07-27) ────────────
+        # A swing setup is perishable in a way a watchlist entry never
+        # was: the entry is a buy stop just above today's high, so the
+        # plan is only valid for the NEXT session. The notification
+        # therefore carries the full plan (entry/stop/target) — telling
+        # the user "SNPS looks interesting" would be useless when the
+        # actionable content is three price levels that expire tomorrow.
+        if session.scorer == "swing":
+            from core.swing_setups import get_swing_setups, TIME_STOP_DAYS
+            setups = get_swing_setups(source="default")
+
+            # Re-notify semantics differ from watchlist. There, a name
+            # already pushed stays suppressed indefinitely — correct, since
+            # "quality business in drawdown" is a slow-moving state. Here
+            # the plan is a price level that is recomputed every session,
+            # so suppressing forever would silence a still-valid setup whose
+            # entry has drifted. We reuse the existing `z_at_notify` slot to
+            # store the ENTRY PRICE and re-push when it moves >= 2%, mirroring
+            # how the legacy path re-notifies on z moving >= 0.5.
+            _RENOTIFY_ENTRY_MOVE = 0.02
+            new_setups = []
+            for s in setups:
+                if s.ticker in deployed_tickers:
+                    continue
+                prev_entry = notified_map.get(s.ticker)
+                if prev_entry is None:
+                    new_setups.append(s)
+                    continue
+                # -10.0 is the sentinel for "notified, price unknown" — a
+                # legacy row. Treat as stale and re-push rather than hide.
+                if prev_entry <= 0 or not s.entry:
+                    new_setups.append(s)
+                    continue
+                if abs(s.entry - prev_entry) / prev_entry >= _RENOTIFY_ENTRY_MOVE:
+                    new_setups.append(s)
+            if not new_setups:
+                logging.info(
+                    f"[watchdog] swing: 0 novos setups "
+                    f"(held_cash €{held_cash:.0f}, total setups={len(setups)}, "
+                    f"já notificados/deployed)"
+                )
+                return
+
+            from datetime import datetime
+            ts = datetime.now(LISBON_TZ).strftime("%Y-%m-%d %H:%M")
+            top3 = new_setups[:3]  # already sorted by R:R in get_swing_setups
+            lines = [
+                f"⚡ *Swing Watchdog* — `{ts}`  ·  engine: ⚡ swing",
+                f"_Cash disponível: *€{held_cash:,.0f}* (do último /cash)_",
+                "",
+                f"🚨 *{len(new_setups)} novo(s) setup(s)* — válidos para a próxima sessão:",
+                "",
+            ]
+            for s in top3:
+                lines.append(f"*{s.ticker}* · {s.setup_type} · R:R *{s.rr_ratio:.1f}*")
+                lines.append(f"`  entry  {s.entry:>9.2f}  (buy stop)`")
+                lines.append(f"`  stop   {s.stop:>9.2f}  ({s.stop_pct*100:+.1f}% = 1R)`")
+                lines.append(f"`  target {s.target:>9.2f}`")
+                for p in s.plan_lines:
+                    lines.append(f"  _{p}_")
+                lines.append("")
+            if len(new_setups) > 3:
+                lines.append(
+                    f"_+ {len(new_setups) - 3} mais — corre `/scan_now` para ver todos com sizing_"
+                )
+                lines.append("")
+            lines.append(
+                f"_Time stop {TIME_STOP_DAYS}d. Size via `/cash <eur>` (risco fixo por trade)._ "
+                f"_Investigar: `/analisar TICKER`._"
+            )
+            send_telegram("\n".join(lines))
+            logging.info(
+                f"[watchdog] swing pushed {len(new_setups)} setups, "
+                f"melhor R:R: {top3[0].ticker} {top3[0].rr_ratio:.1f}"
+            )
+            # Persist entry price as z_at_notify (see re-notify note above).
+            # Only the setups actually SHOWN are recorded — a name that was
+            # counted but truncated off the message must stay eligible.
+            new_notified = list(notified_map.items())
+            for s in top3:
+                idx = next((i for i, (t, _v) in enumerate(new_notified) if t == s.ticker), None)
+                if idx is not None:
+                    new_notified[idx] = (s.ticker, s.entry)
+                else:
+                    new_notified.append((s.ticker, s.entry))
+            state["notified_tickers"] = [
+                {"ticker": t, "z_at_notify": v} for t, v in new_notified
+            ]
+            state["last_watchdog_run"] = datetime.now().isoformat(timespec="seconds")
+            state["last_watchdog_scorer"] = "swing"
+            try:
+                ws_path.write_text(json.dumps(state, indent=2))
+            except Exception as e:
+                logging.warning(f"[watchdog] state write failed: {e}")
+            return
+
+        # ── Watchlist mode (long-term book; explicit opt-in) ───────────
         # Direct path through honest_watchlist for clarity. No z-based
         # ranking. "New qualifier" = ticker in current watchlist AND
         # not in notified set AND not already deployed AND triage tier
@@ -2474,6 +2571,7 @@ def run_watchdog_scan() -> None:
         from datetime import datetime
         ts = datetime.now(LISBON_TZ).strftime("%Y-%m-%d %H:%M")
         engine_tag = {
+            "swing":       "⚡ swing",
             "watchlist":   "📋 watchlist",
             "dislocation": "🧠 dislocation_z (experimental)",
             "composite":   "📐 composite_z (legacy)",
@@ -3809,17 +3907,26 @@ def main() -> None:
         id="momentum_scan_intraday", name="Momentum Scan US Intraday 17h50",
     )
 
-    # ── Cash Watchdog: 18h00 Lisboa, seg-sex ─────────────────────────────────
-    # When the last /cash run left held_cash_eur > 0, this scan walks the
-    # CORE universe daily and pushes a Telegram notification when a new
-    # qualifier (composite z > 0.3) emerges that wasn't deployed and hasn't
-    # been notified yet. Solves the "being out of market is expensive" gap:
-    # held cash earns 2.2% at T212; a real opportunity needs to be flagged
-    # in hours, not weeks.
+    # ── Cash / Swing Watchdog: 22h10 Lisboa, seg-sex ─────────────────────────
+    # MOVED from 18h00 (2026-07-28). 18h00 is mid-session in the US (opens
+    # 14h30 Lisbon), so the setup engine was computing the pause high, the
+    # pause low and therefore the entry/stop from a bar that had not closed
+    # yet — the levels it pushed could still move before the bell. Swing
+    # entries are derived from a COMPLETED daily bar by construction, so the
+    # scan belongs after the US close (21h00 Lisbon).
+    #
+    # 22h10 specifically, so the evening runs in a sensible order:
+    #   22h00  core_scan + position_monitor  — exits on bot-held positions
+    #   22h05  conviction_monitor            — exits on swing/conviction positions
+    #   22h10  THIS                          — new entries for tomorrow
+    # Manage what you already hold before being shown anything new.
+    #
+    # In watchlist mode the same job still pushes new watchlist qualifiers;
+    # that path is unaffected by the timing beyond using settled EOD data.
     scheduler.add_job(
         run_watchdog_scan,
-        CronTrigger(day_of_week="mon-fri", hour=18, minute=0, timezone=LISBON_TZ),
-        id="cash_watchdog", name="Cash Watchdog 18h",
+        CronTrigger(day_of_week="mon-fri", hour=22, minute=10, timezone=LISBON_TZ),
+        id="cash_watchdog", name="Swing/Cash Watchdog 22h10",
     )
     # ── Momentum scan US: 21h30 Lisboa (após fecho americano) ────────────────
     scheduler.add_job(

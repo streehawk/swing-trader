@@ -57,14 +57,23 @@ _OUTCOMES_FILE  = "conviction_outcomes.json"
 # Tuning knobs (env-overridable)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_FALLBACK_TRAIL_PCT  = float(os.getenv("CONVICTION_TRAIL_FALLBACK_PCT", "0.10"))
-_ATR_MULTIPLIER      = float(os.getenv("CONVICTION_ATR_MULTIPLIER", "2.5"))
-_ATR_MIN_STOP_PCT    = float(os.getenv("CONVICTION_ATR_MIN_STOP_PCT", "0.08"))
+# Phase 3 retune (2026-07-27): these were calibrated for multi-month
+# holds. A 2.5×ATR trail with an 8% floor gives back a quarter of a swing
+# move before it fires, and a 120-day time decay is 8× the plan horizon.
+# Old defaults: TRAIL_FALLBACK 0.10, ATR_MULTIPLIER 2.5, MIN_STOP 0.08,
+# DIP_TIME_DECAY 120. All still env-overridable — set them back if you
+# run the long-term book (DIPRADAR_SCORING_MODE=watchlist).
+_FALLBACK_TRAIL_PCT  = float(os.getenv("CONVICTION_TRAIL_FALLBACK_PCT", "0.07"))
+_ATR_MULTIPLIER      = float(os.getenv("CONVICTION_ATR_MULTIPLIER", "1.5"))
+_ATR_MIN_STOP_PCT    = float(os.getenv("CONVICTION_ATR_MIN_STOP_PCT", "0.04"))
 _EDGE_FLOOR          = float(os.getenv("ML_SCORE_FLOOR", "0.01"))
-_DIP_TIME_DECAY_DAYS = int(os.getenv("CONVICTION_DIP_TIME_DECAY_DAYS", "120"))
+_DIP_TIME_DECAY_DAYS = int(os.getenv("CONVICTION_DIP_TIME_DECAY_DAYS", "21"))
 _QUALITY_DROP_TRIGGER = float(os.getenv("CONVICTION_QUALITY_DROP_TRIGGER", "0.15"))
 
-VALID_TYPES = ("DIP", "MOMENTUM", "CORE")
+# SWING is the Phase 1 bucket: a position opened from a swing setup, with
+# a plan (entry/stop/target/time stop) attached. Its exits are mechanical
+# and live in core/swing_exits.py — no ML, no fundamentals, no discretion.
+VALID_TYPES = ("SWING", "DIP", "MOMENTUM", "CORE")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Trigger taxonomy
@@ -84,6 +93,18 @@ PHASE_TRIGGERS = {
     "TIME_DECAY",
     "EDGE_GONE",
     "SUGGEST_TRANSITION",
+    "SWING_TARGET_PARTIAL",
+    "SWING_RAISE_STOP",
+}
+# MECHANICAL triggers are the exits the user pre-committed to when the
+# position was opened. Like STRUCTURAL triggers they bypass never_sell —
+# a stop you can opt out of is not a stop, and the R-multiple accounting
+# Phase 4 validates against is meaningless if stops are optional.
+MECHANICAL_TRIGGERS = {
+    "SWING_STOP",
+    "SWING_BREAKEVEN_STOP",
+    "SWING_TRAIL_STOP",
+    "SWING_TIME_STOP",
 }
 STRUCTURAL_TRIGGERS = {
     "QUALITY_DECLINE",          # quality_score dropped ≥ 20pp
@@ -138,6 +159,22 @@ class ConvictionPosition:
     # Snapshot of fundamentals at entry for structural-decline detection.
     # Keys: revenue_growth, gross_margin, debt_equity, roe, fcf_yield.
     entry_fundamentals:   Optional[dict] = None
+
+    # ── SWING plan (Phase 3) ──────────────────────────────────────────
+    # Frozen at entry from the core.swing_setups.SwingSetup that produced
+    # the trade. plan_stop is the ORIGINAL stop and is never mutated —
+    # swing_stop carries the ratcheted level. Keeping both is what lets
+    # the exit engine tell "-1R stop" from "trail stop in profit", and
+    # what makes 1R recoverable for R-multiple reporting after the fact.
+    # All default to None/0 so records written before Phase 3 load fine.
+    plan_entry:           Optional[float] = None
+    plan_stop:            Optional[float] = None
+    plan_target:          Optional[float] = None
+    plan_time_stop_days:  Optional[int] = None
+    setup_type:           Optional[str] = None    # PULLBACK | BREAKOUT
+    swing_stop:           float = 0.0             # ratcheted stop (0 = use plan_stop)
+    swing_high_water:     float = 0.0
+    swing_partial_taken:  bool = False
 
     # Mutable state
     last_check_date:      Optional[str] = None
@@ -228,8 +265,18 @@ def add_conviction(
     position_type: str,
     trailing_high: Optional[float] = None,
     note: Optional[str] = None,
+    *,
+    plan: Optional[dict] = None,
 ) -> ConvictionPosition:
-    """Register a new conviction position. Captures entry-day analysis snapshot."""
+    """Register a new conviction position. Captures entry-day analysis snapshot.
+
+    `plan` attaches a swing trade plan at creation. Expected keys:
+    entry, stop, target, time_stop_days, setup_type — the subset of
+    core.swing_setups.SwingSetup that must survive into the position so
+    exits can be managed against the plan the trade was actually taken on.
+    Passing a plan with position_type != "SWING" is accepted (the fields
+    are inert) so a later /conviction transition can activate them.
+    """
     ticker = ticker.upper().strip()
     pt = position_type.upper().strip()
     if pt not in VALID_TYPES:
@@ -269,10 +316,85 @@ def add_conviction(
         note               = note,
     )
 
+    if plan:
+        pos.plan_entry          = _f_or_none(plan.get("entry")) or float(entry_price)
+        pos.plan_stop           = _f_or_none(plan.get("stop"))
+        pos.plan_target         = _f_or_none(plan.get("target"))
+        pos.plan_time_stop_days = int(plan.get("time_stop_days") or 15)
+        pos.setup_type          = plan.get("setup_type")
+        # Seed the ratchet from the plan so the first tick compares against
+        # the agreed stop rather than treating "no stop yet" as unset.
+        pos.swing_stop          = float(pos.plan_stop or 0.0)
+        pos.swing_high_water    = float(entry_price)
+
     all_positions = load_convictions()
     all_positions.append(pos)
     save_convictions(all_positions)
-    logger.info(f"[conviction] added {ticker} ({pt}, never_sell={default_never_sell}) @ ${entry_price:.2f}")
+    logger.info(
+        f"[conviction] added {ticker} ({pt}, never_sell={default_never_sell}) "
+        f"@ ${entry_price:.2f}"
+        + (f" · plan stop ${pos.plan_stop:.2f} target ${pos.plan_target:.2f}"
+           if pos.plan_stop and pos.plan_target else "")
+    )
+    return pos
+
+
+def _f_or_none(v) -> Optional[float]:
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def set_swing_plan(
+    ticker: str,
+    entry: float,
+    stop: float,
+    target: float,
+    *,
+    time_stop_days: int = 15,
+    setup_type: Optional[str] = None,
+    switch_type: bool = True,
+) -> Optional[ConvictionPosition]:
+    """Attach (or replace) a swing plan on an existing position.
+
+    Used by `/conviction plan` and by auto-sync when it recovers a plan
+    from the last /cash proposal. Resets the ratchet: a new plan means a
+    new 1R, so carrying over an old high-water mark would misreport every
+    R-multiple that follows.
+
+    Rejects stop >= entry — that is not a long plan, and letting it through
+    would produce a non-positive 1R that silently disables management.
+    """
+    pos = get_by_ticker(ticker)
+    if not pos:
+        return None
+    if stop >= entry:
+        raise ValueError(
+            f"stop ${stop:.2f} deve ser abaixo do entry ${entry:.2f} (posição long)"
+        )
+    if target <= entry:
+        raise ValueError(
+            f"target ${target:.2f} deve ser acima do entry ${entry:.2f}"
+        )
+
+    pos.plan_entry          = float(entry)
+    pos.plan_stop           = float(stop)
+    pos.plan_target         = float(target)
+    pos.plan_time_stop_days = int(time_stop_days)
+    pos.setup_type          = setup_type or pos.setup_type
+    pos.swing_stop          = float(stop)
+    pos.swing_high_water    = max(float(entry), float(pos.last_check_price or 0.0))
+    pos.swing_partial_taken = False
+    if switch_type:
+        pos.position_type = "SWING"
+        pos.never_sell = False  # a swing plan and never_sell are contradictory
+
+    update_conviction(pos)
+    logger.info(
+        f"[conviction] {pos.ticker}: swing plan set — entry ${entry:.2f} "
+        f"stop ${stop:.2f} target ${target:.2f} ({time_stop_days}d)"
+    )
     return pos
 
 
@@ -626,7 +748,84 @@ def evaluate_conviction(pos: ConvictionPosition) -> dict:
         pos.last_win_prob = win_prob
 
     # ── Type-specific triggers ────────────────────────────────────────────────
-    if pos.position_type == "MOMENTUM":
+    if pos.position_type == "SWING":
+        # Mechanical exits only. No ML, no fundamentals, no discretion —
+        # the plan was fixed at entry and the job here is to execute it.
+        # The fundamentals/ML block above still ran (it populates display
+        # fields shared by every type), but nothing it produced votes.
+        from core.swing_exits import (
+            SwingPlan, SwingState, evaluate_swing_exit, trading_days_to_calendar,
+        )
+
+        _plan_entry = pos.plan_entry if pos.plan_entry else pos.entry_price
+        _plan_stop = pos.plan_stop
+        _plan_target = pos.plan_target
+
+        if _plan_stop is None or _plan_target is None:
+            # A SWING position without a plan cannot be managed mechanically.
+            # Say so loudly rather than silently falling back to some default
+            # stop the user never agreed to.
+            out["triggers"].append({
+                "kind": "SWING_PLAN_MISSING",
+                "severity": "med",
+                "message": (
+                    f"Posição marcada SWING mas sem plano (stop/alvo) registado. "
+                    f"Gestão automática inactiva — define via `/conviction plan "
+                    f"{pos.ticker} <entry> <stop> <target>` ou muda o tipo."
+                ),
+            })
+        else:
+            _atr = None
+            try:
+                from core.swing_setups import _wilder_atr
+                _atr = _wilder_atr(hist) if hist is not None else None
+            except Exception as _atr_err:
+                logger.debug(f"[conviction] swing ATR {pos.ticker}: {_atr_err}")
+
+            _time_stop_trading = pos.plan_time_stop_days or 15
+            plan = SwingPlan(
+                entry=float(_plan_entry),
+                stop=float(_plan_stop),
+                target=float(_plan_target),
+                # days_held is CALENDAR days; the plan horizon is in bars.
+                time_stop_days=trading_days_to_calendar(_time_stop_trading),
+            )
+            state = SwingState(
+                current_stop=pos.swing_stop or 0.0,
+                high_water=pos.swing_high_water or 0.0,
+                partial_taken=bool(pos.swing_partial_taken),
+            )
+            decision = evaluate_swing_exit(
+                plan, state,
+                current_price=current, atr=_atr, days_held=pos.days_held,
+            )
+
+            # Persist ratcheted state on the position (caller saves).
+            pos.swing_stop = decision.new_stop
+            pos.swing_high_water = decision.high_water
+            if decision.trigger == "SWING_TARGET_PARTIAL":
+                pos.swing_partial_taken = True
+
+            out["swing_decision"]  = decision
+            out["swing_r_multiple"] = decision.r_multiple
+            out["swing_mfe_r"]      = decision.mfe_r
+            out["stop_price"]       = decision.new_stop
+            out["swing_stop_basis"] = decision.stop_basis
+            out["atr_pct"] = (_atr / current) if (_atr and current > 0) else None
+
+            if decision.trigger != "SWING_HOLD":
+                out["triggers"].append({
+                    "kind":     decision.trigger,
+                    "severity": decision.severity,
+                    "message":  decision.message,
+                })
+            out["signals"].append(
+                f"SWING {pos.setup_type or '?'} · {decision.r_multiple:+.2f}R "
+                f"(pico {decision.mfe_r:+.2f}R) · stop ${decision.new_stop:.2f} "
+                f"({decision.stop_basis}) · dia {pos.days_held}/{plan.time_stop_days}"
+            )
+
+    elif pos.position_type == "MOMENTUM":
         atr_pct, atr_source = _compute_atr_stop_pct(hist, current)
         pos.last_atr_stop_pct = atr_pct
         stop_price = pos.trailing_high * (1 - atr_pct)
@@ -802,6 +1001,16 @@ def _hold_close_verdict(ev: dict, pos: Optional[ConvictionPosition] = None) -> s
 
     structural_high = [t for t in highs if t["kind"] in STRUCTURAL_TRIGGERS]
     phase_high      = [t for t in highs if t["kind"] in PHASE_TRIGGERS]
+    mechanical      = [t for t in triggers if t["kind"] in MECHANICAL_TRIGGERS]
+
+    # 0. MECHANICAL — a swing stop/time stop the user pre-committed to at
+    # entry. Checked before everything else and NOT suppressible by
+    # never_sell: the plan's risk arithmetic only holds if the stop is
+    # honoured, and R-multiple reporting is meaningless otherwise.
+    if mechanical:
+        t = mechanical[0]
+        return (f"🔴 *FECHAR — {t['kind'].replace('SWING_', '')}*\n"
+                f"_{t['message']}_")
 
     # 1. STRUCTURAL high — always overrides never_sell. Most severe outcome.
     if structural_high:
@@ -830,6 +1039,14 @@ def _hold_close_verdict(ev: dict, pos: Optional[ConvictionPosition] = None) -> s
         return "🟡 *VIGIAR* — stop tocado sem confirmação. Pronto a fechar amanhã se RSI/MA20 confirmar."
     if any(t["kind"] == "TIME_DECAY" for t in meds):
         return "🟡 *REVER PRAZO* — tese de recuperação a expirar."
+    if any(t["kind"] == "SWING_TARGET_PARTIAL" for t in meds):
+        return "🎯 *REALIZAR PARCIAL* — alvo atingido; vende 50% e sobe o stop a breakeven."
+    if any(t["kind"] == "SWING_PLAN_MISSING" for t in meds):
+        return "⚠️ *SEM PLANO* — posição SWING sem stop/alvo; gestão automática inactiva."
+
+    lows = [t for t in triggers if t.get("severity") == "low"]
+    if any(t["kind"] == "SWING_RAISE_STOP" for t in lows):
+        return "⬆️ *SOBE O STOP* — actualiza a ordem em T212 para o novo nível."
 
     return "🟢 *MANTER* — sem triggers de saída."
 
@@ -1069,6 +1286,64 @@ def _classify_type_from_signals(ticker: str, current_price: float, hist) -> str:
     return "MOMENTUM"
 
 
+_PROPOSAL_MAX_AGE_DAYS = int(os.getenv("SWING_PLAN_RECOVERY_DAYS", "10"))
+
+
+def _proposal_path():
+    """Location of last_cash_proposal.json. Separate so tests can point it
+    at a tmp dir without monkeypatching Path.exists globally."""
+    from pathlib import Path as _Path
+    _dd = _Path("/data") if _Path("/data").exists() else _Path(__file__).resolve().parent.parent / "data"
+    return _dd / "last_cash_proposal.json"
+
+
+def _recover_swing_plan(ticker: str) -> Optional[dict]:
+    """Look up a swing plan for `ticker` in the last /cash proposal.
+
+    /cash writes last_cash_proposal.json with entry/stop/target per SWING
+    action (see bot_commands._run_allocation_swing). When the user fills
+    that order in T212 and syncs, this reattaches the plan so the position
+    is managed against the levels it was actually taken on.
+
+    Age-capped: a proposal older than SWING_PLAN_RECOVERY_DAYS refers to
+    price levels that no longer describe the market, and silently applying
+    a stale stop is worse than having none.
+    """
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+
+        path = _proposal_path()
+        if not path.exists():
+            return None
+        data = _json.loads(path.read_text())
+        if (data.get("scorer_used") or "") != "swing":
+            return None
+
+        ts = data.get("timestamp")
+        if ts:
+            age = (_dt.now() - _dt.fromisoformat(ts)).days
+            if age > _PROPOSAL_MAX_AGE_DAYS:
+                logger.debug(f"[conviction] proposal {age}d old — plan recovery skipped")
+                return None
+
+        for a in data.get("actions") or []:
+            if (a.get("ticker") or "").upper() != ticker.upper():
+                continue
+            if a.get("stop") is None or a.get("target") is None:
+                return None
+            return {
+                "entry":          a.get("entry"),
+                "stop":           a.get("stop"),
+                "target":         a.get("target"),
+                "time_stop_days": a.get("time_stop_days") or 15,
+                "setup_type":     a.get("setup_type"),
+            }
+    except Exception as e:
+        logger.debug(f"[conviction] swing plan recovery {ticker}: {e}")
+    return None
+
+
 def auto_sync_from_portfolio(send_telegram: Optional[Callable[[str], None]] = None) -> dict:
     """Create conviction records for portfolio holdings not yet tracked.
 
@@ -1140,7 +1415,17 @@ def auto_sync_from_portfolio(send_telegram: Optional[Callable[[str], None]] = No
         # their intent (e.g., a CORE conviction getting demoted to
         # MOMENTUM because price is up).
         current = _fetch_price(ticker, fallback=entry_price)
-        if bucket in ("CORE", "MOMENTUM", "DIP"):
+
+        # A plan from the last /cash swing proposal outranks both the
+        # bucket label and price-signal classification. Without this the
+        # whole Phase 3 exit engine is unreachable in practice: /cash
+        # proposes the plan, the user fills it in T212, and auto-sync
+        # would otherwise create a plain MOMENTUM record and discard the
+        # stop/target the trade was actually taken on.
+        _plan = _recover_swing_plan(ticker)
+        if _plan:
+            ptype = "SWING"
+        elif bucket in ("SWING", "CORE", "MOMENTUM", "DIP"):
             ptype = bucket
         else:
             hist  = _fetch_price_history(ticker, period="6mo")
@@ -1150,7 +1435,9 @@ def auto_sync_from_portfolio(send_telegram: Optional[Callable[[str], None]] = No
             add_conviction(
                 ticker, entry_price, shares, ptype,
                 trailing_high = current if ptype == "MOMENTUM" else None,
-                note          = "auto-sync from portfolio",
+                note          = ("auto-sync from portfolio (plano do último /cash)"
+                                 if _plan else "auto-sync from portfolio"),
+                plan          = _plan,
             )
             added.append((ticker, ptype))
         except Exception as e:
@@ -1213,13 +1500,33 @@ def check_active_stops(
 
     n_sent = 0
     for pos in positions:
-        if pos.position_type != "MOMENTUM":
+        if pos.position_type not in ("MOMENTUM", "SWING"):
             continue
         dedup_key = f"{pos.ticker.upper()}_stop"
         if dedup_key in alerted_today:
             continue
         try:
             ev = evaluate_conviction(pos)
+
+            # SWING: a broken stop is the single most time-critical event
+            # the system produces — the plan says exit, and waiting for the
+            # 22h05 daily sweep can cost multiples of the 1R risked. Uses
+            # the swing_exits message verbatim so intraday and daily alerts
+            # can never disagree about what the stop was.
+            if pos.position_type == "SWING":
+                from core.swing_exits import MECHANICAL_EXITS, format_exit_alert
+                _dec = ev.get("swing_decision")
+                if _dec is None or _dec.trigger not in MECHANICAL_EXITS:
+                    continue
+                try:
+                    update_conviction(pos)  # persist ratcheted stop / high water
+                except Exception as _pe:
+                    logger.warning(f"[conviction] persist swing state {pos.ticker}: {_pe}")
+                send_telegram(format_exit_alert(pos.ticker, _dec, days_held=pos.days_held))
+                alerted_today.add(dedup_key)
+                n_sent += 1
+                continue
+
             high_triggers = [
                 t for t in ev.get("triggers", [])
                 if t.get("severity") == "high"

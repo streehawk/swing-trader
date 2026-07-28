@@ -1,9 +1,15 @@
-"""core/scoring_dispatch.py — Dispatcher between dislocation_z and composite_z.
+"""core/scoring_dispatch.py — Dispatcher across scoring modes.
 
-Single point of dispatch for every scoring caller during the F.6
-side-by-side transition window. Reads `DIPRADAR_USE_DISLOCATION` env
-(default "1" = dislocation) ONCE per scoring session and routes all
+Single point of dispatch for every scoring caller. Reads
+`DIPRADAR_SCORING_MODE` ONCE per scoring session and routes all
 per-ticker calls to the same scorer for that session.
+
+Default is `swing` (Phase 1 pivot, 2026-07-27). The prior default,
+`watchlist`, answered a multi-month accumulation question — quality
+businesses at a >=25% drawdown — which is structurally the opposite
+posture to swing trading. It remains available as an explicit mode
+for anyone still running the long-term book, but nothing selects it
+automatically any more.
 
 Why a ScoringSession class instead of a free function:
   - The flag MUST be observed at one point per scan, not per ticker.
@@ -34,7 +40,9 @@ from typing import Optional, Union
 
 log = logging.getLogger("scoring_dispatch")
 
-ScorerName = str  # "dislocation" | "composite" — Literal omitted for py<3.10 compat
+ScorerName = str  # "swing" | "watchlist" | "dislocation" | "composite"
+
+VALID_SCORERS = ("swing", "watchlist", "composite", "dislocation")
 
 
 @dataclass
@@ -45,6 +53,9 @@ class ScoreResult:
     .explanation_lines() rather than reaching into .breakdown directly.
 
     Semantics by scorer:
+      swing:       z=None (R:R is not an edge estimate); qualifies means
+                   a COMPLETE trade plan exists (entry/stop/target/time
+                   stop); sort_key = -rr_ratio so callers sort ascending
       watchlist:   z=None (no ranking by edge); qualifies tells you if
                    it's in the list; sort callers by entry.dd_from_52w_high
       composite:   z=composite_z (legacy heuristic); qualifies=z>=threshold
@@ -63,6 +74,27 @@ class ScoreResult:
 
     def explanation_lines(self, threshold_abs: float = 0.3) -> list[str]:
         """Multi-line audit dump for /analisar appendix and /scan_now."""
+        if self.scorer == "swing":
+            s = self.breakdown
+            if not self.qualifies:
+                return [f"{self.ticker}: sem setup — {s.reject_reason}"]
+            lines = [self.summary_line]
+            lines.append(
+                f"  • entry {s.entry:.2f} (buy stop) · stop {s.stop:.2f} "
+                f"({s.stop_pct*100:+.1f}% = 1R) · target {s.target:.2f}"
+            )
+            lines.append(
+                f"  • time stop {s.time_stop_days}d · R:R {s.rr_ratio:.2f} · "
+                f"ATR {(s.atr_pct or 0)*100:.1f}% · RSI {s.rsi14:.0f}"
+            )
+            if s.days_to_earnings is not None:
+                lines.append(f"  • earnings em {s.days_to_earnings}d (fora da janela)")
+            if s.sector_relative_20d is not None:
+                lines.append(f"  ℹ️ vs sector 20d: {s.sector_relative_20d*100:+.0f}pp")
+            for p in s.plan_lines:
+                lines.append(f"  • {p}")
+            return lines
+
         if self.scorer == "watchlist":
             # WatchlistEntry has pass/fail per criterion + display fields
             b = self.breakdown
@@ -108,10 +140,11 @@ class ScoreResult:
 
 
 def get_active_scorer() -> ScorerName:
-    """Return active scorer based on env. Default = watchlist.
+    """Return active scorer based on env. Default = swing.
 
     Reads `DIPRADAR_SCORING_MODE` (preferred). Accepts:
-        "watchlist"   — honest filter (default ship after F.5 REVERT)
+        "swing"       — swing setup engine (DEFAULT since 2026-07-27)
+        "watchlist"   — long-term honest filter (previous default)
         "composite"   — legacy heuristic z-score
         "dislocation" — experimental rule-based (failed F.5 binding gate)
 
@@ -120,10 +153,10 @@ def get_active_scorer() -> ScorerName:
         DIPRADAR_USE_DISLOCATION=0 -> composite
         DIPRADAR_USE_DISLOCATION=1 -> dislocation
     The legacy flag will be deprecated in a future release; once both
-    are unset, default is "watchlist".
+    are unset, default is "swing".
     """
     explicit = os.environ.get("DIPRADAR_SCORING_MODE", "").strip().lower()
-    if explicit in ("watchlist", "composite", "dislocation"):
+    if explicit in VALID_SCORERS:
         return explicit
 
     # Backward-compat: legacy flag if no explicit mode set
@@ -133,8 +166,9 @@ def get_active_scorer() -> ScorerName:
     if legacy in ("0", "false", "False", "FALSE"):
         return "composite"
 
-    # Default after F.5 REVERT: watchlist is the honest ship
-    return "watchlist"
+    # Phase 1 pivot (2026-07-27): swing is the ship. `watchlist` stays
+    # reachable via explicit DIPRADAR_SCORING_MODE=watchlist.
+    return "swing"
 
 
 class ScoringSession:
@@ -180,7 +214,12 @@ class ScoringSession:
     def _load_stats(self) -> dict:
         if self._stats is not None:
             return self._stats
-        if self.scorer == "watchlist":
+        if self.scorer == "swing":
+            # Swing gates are absolute (ATR multiples, MA relationships,
+            # liquidity floors) — nothing is scored against a universe
+            # distribution, so there is no stats sweep to pay for.
+            self._stats = {}
+        elif self.scorer == "watchlist":
             # Watchlist doesn't compute against a stats distribution;
             # criteria are absolute thresholds. Empty dict keeps the
             # interface uniform without an unnecessary universe walk.
@@ -207,6 +246,26 @@ class ScoringSession:
         `horizon`: composite-only ("CORE" or "DIP"). Ignored elsewhere.
         """
         stats = self._load_stats()
+
+        if self.scorer == "swing":
+            # `signals` is ignored: swing reads OHLCV bars, not the
+            # fundamentals dict core_radar produces. evaluate_swing
+            # fetches its own (cached) history when none is supplied.
+            from core.swing_setups import evaluate_swing
+            s = evaluate_swing(ticker, hist=signals.get("_hist") if signals else None)
+            return ScoreResult(
+                ticker=ticker,
+                scorer="swing",
+                z=None,  # R:R is arithmetic on the plan, not an edge estimate
+                qualifies=s.qualifies,
+                hard_excluded=not s.qualifies,
+                exclude_reason=s.reject_reason or None,
+                summary_line=s.summary_line,
+                breakdown=s,
+                # Negated so ascending sorts put the best R:R first, matching
+                # how watchlist's most-negative-DD-first sort_key behaves.
+                sort_key=-(s.rr_ratio or 0.0),
+            )
 
         if self.scorer == "watchlist":
             from core.honest_watchlist import evaluate_ticker

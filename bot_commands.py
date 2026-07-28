@@ -6876,6 +6876,299 @@ def _handle_command(text: str) -> None:
                 logging.error(f"[cash/watchlist] {_e}", exc_info=True)
                 _reply(f"❌ Allocation (watchlist) falhou: `{_md_safe(_e)}`")
 
+        def _wl_swing_stats() -> dict:
+            try:
+                from core.swing_setups import get_last_run_stats
+                return get_last_run_stats() or {}
+            except Exception:
+                return {}
+
+        def _swing_week_pnl_pct(equity: float) -> "float | None":
+            """Realised P&L this ISO week as a fraction of the pool.
+
+            Plan rule 9: down 6% in a week → stop trading, review. Reads
+            the conviction outcomes log (where closed swing trades land).
+            Returns None when the log is unreadable — a missing log must
+            not silently arm OR disarm the breaker, so the caller treats
+            None as "unknown" and proceeds without the block.
+            """
+            if equity <= 0:
+                return None
+            try:
+                from datetime import date as _d
+                from core.conviction_radar import load_outcomes
+                today = _d.today()
+                yr, wk, _ = today.isocalendar()
+                total = 0.0
+                for o in load_outcomes() or []:
+                    ds = (o.get("closed_at") or o.get("exit_date") or "")[:10]
+                    if not ds:
+                        continue
+                    try:
+                        d = _d.fromisoformat(ds)
+                    except ValueError:
+                        continue
+                    oy, ow, _ = d.isocalendar()
+                    if (oy, ow) != (yr, wk):
+                        continue
+                    total += float(o.get("pnl_abs") or o.get("pnl") or 0.0)
+                return total / equity
+            except Exception as e:
+                logging.debug(f"[cash/swing] week pnl unavailable: {e}")
+                return None
+
+        def _run_allocation_swing(cash_amount):
+            """Swing-mode /cash: RISK-based sizing across today's setups.
+
+            Equal weight is incoherent here. Two setups at €500 each risk
+            wildly different amounts when one stops out at -3% and the
+            other at -8%. Every position is sized so a stop-out costs the
+            same fraction of equity — that is what makes a losing streak
+            survivable and makes results comparable in R.
+
+            Three caps, applied in order:
+              1. per-trade risk  — SWING_RISK_PCT of equity (default 0.75%)
+              2. portfolio heat  — total open risk <= SWING_MAX_HEAT (4%)
+              3. cash on hand    — notional can't exceed the inflow
+            Setups are taken best-R:R-first, so a cap cuts the weakest
+            plans rather than an arbitrary slice.
+            """
+            try:
+                import json as _json
+                from pathlib import Path as _Path
+                from datetime import datetime as _dt
+                from portfolio.portfolio import get_positions
+                from data.market_client import get_usdeur
+                from core.swing_setups import (
+                    get_swing_setups, position_size, _envf, _envi, TIME_STOP_DAYS,
+                )
+
+                # Plan §3 rules 1 and 4. Risk 1% of the dedicated swing
+                # POOL (not net worth) and never hold more than 2 open
+                # positions. MAX_HEAT is now implied — 2 x 1% = 2% — but is
+                # kept as an explicit belt-and-braces cap.
+                RISK_PCT      = _envf("SWING_RISK_PCT", 0.01)
+                MAX_HEAT      = _envf("SWING_MAX_HEAT", 0.02)
+                MAX_NEW       = _envi("SWING_MAX_NEW_POSITIONS", 2)
+                WEEKLY_STOP   = _envf("SWING_WEEKLY_CIRCUIT_BREAKER", 0.06)
+
+                _usdeur = get_usdeur()
+                positions = get_positions() or {}
+                _pf_usd = sum(
+                    float(p.get("total_cost") or p.get("value_eur") or p.get("cost_eur") or 0)
+                    for p in positions.values()
+                )
+                portfolio_value = _pf_usd * _usdeur
+                equity = portfolio_value + cash_amount
+
+                try:
+                    from core.market_regime import compute_regime
+                    _regime = compute_regime()
+                    _r_label = _regime.get("regime_label", "?")
+                    _r_score = _regime.get("regime_score", 50.0)
+                except Exception:
+                    _r_label, _r_score = "?", 50.0
+                _badge = {"FROTHY": "🟦", "NEUTRAL": "🟨", "PANIC": "🟥"}.get(_r_label, "⚪")
+
+                # Regime scales RISK, not cash buffer. In PANIC the trend
+                # gate already thins the candidate list; what actually
+                # changes is gap risk per position, so halve the per-trade
+                # risk rather than holding a cash pile against setups that
+                # each carry their own stop.
+                _risk_mult = 0.5 if _r_label == "PANIC" else 1.0
+                _eff_risk = RISK_PCT * _risk_mult
+
+                # Plan rule 9 — weekly circuit breaker. Checked BEFORE the
+                # scan: if the week is already down 6%, there is no version
+                # of today's setups that should be traded, so showing them
+                # would only invite the rule to be broken.
+                _wk = _swing_week_pnl_pct(equity)
+                if _wk is not None and _wk <= -WEEKLY_STOP:
+                    _reply("\n".join([
+                        "🛑 *Circuit breaker semanal accionado*",
+                        "",
+                        f"Semana em *{_wk*100:+.1f}%* (limite −{WEEKLY_STOP*100:.0f}%).",
+                        "",
+                        "_Regra 9: parar de operar esta semana e rever. "
+                        "Posições abertas continuam geridas pelos seus stops._",
+                        "",
+                        "_Nunca dobrar o size para recuperar._",
+                    ]))
+                    return
+
+                setups = get_swing_setups(source="default")
+                _st = _wl_swing_stats()
+
+                lines = ["⚡ *Allocation — Swing mode*", ""]
+                lines.append(
+                    f"📊 Pool swing: €{portfolio_value:,.0f} + inflow €{cash_amount:,.0f} "
+                    f"= *€{equity:,.0f}*"
+                )
+                lines.append(f"{_badge} Regime: *{_r_label}* ({_r_score:.0f}/100)")
+                if _st.get("regime_msg"):
+                    lines.append(f"_{_st['regime_msg']}_")
+                lines.append(
+                    f"🎯 Risco/trade: *{_eff_risk*100:.2f}%* = €{equity*_eff_risk:.0f}"
+                    + (f"  _(×{_risk_mult} por regime {_r_label})_" if _risk_mult != 1.0 else "")
+                )
+                lines.append(f"📌 Máx {MAX_NEW} posições abertas (regra 4)")
+                if _wk is not None:
+                    lines.append(f"📅 Semana: {_wk*100:+.1f}% (circuit breaker −{WEEKLY_STOP*100:.0f}%)")
+                lines.append("")
+
+                if not setups:
+                    if _st.get("regime_ok") is False:
+                        lines.append("🛑 *Mercado hostil — sem novas entradas long.*")
+                        lines.append("")
+                        lines.append(
+                            "_Regra 11: SPY abaixo da SMA50 ou SMA200 trava qualquer setup. "
+                            "Posições abertas continuam geridas pelos seus stops._"
+                        )
+                    else:
+                        lines.append("⚪ *Sem setups hoje* — nenhum candidato passou os 7 gates.")
+                        lines.append(
+                            "_Falhar uma trade não custa nada; uma trade má custa 1%._"
+                        )
+                    lines.append("")
+                    lines.append(f"💰 Mantém os €{cash_amount:,.0f} em cash.")
+                    _reply("\n".join(lines))
+                    return
+
+                # Take best R:R first, applying the three caps as we go.
+                allocations: dict[str, float] = {}
+                plan_rows = []
+                heat_budget = equity * MAX_HEAT
+                heat_used = 0.0
+                cash_left = cash_amount
+                skipped = []
+
+                for s in setups:
+                    if len(allocations) >= MAX_NEW:
+                        skipped.append((s.ticker, f"cap de {MAX_NEW} novas posições/run"))
+                        continue
+                    sz = position_size(s, equity, risk_pct=_eff_risk, usd_eur=_usdeur)
+                    if sz["shares"] <= 0:
+                        continue
+                    if heat_used + sz["risk_eur"] > heat_budget:
+                        skipped.append((s.ticker, f"excede heat máximo {MAX_HEAT*100:.0f}%"))
+                        continue
+                    if sz["notional_eur"] > cash_left:
+                        # Scale down to the cash available rather than skip:
+                        # a smaller position with the same stop is still a
+                        # coherent trade, just below full risk.
+                        if cash_left < 25:
+                            skipped.append((s.ticker, "cash insuficiente"))
+                            continue
+                        _scale = cash_left / sz["notional_eur"]
+                        sz["shares"] = round(sz["shares"] * _scale, 4)
+                        sz["notional_eur"] = round(cash_left, 2)
+                        sz["risk_eur"] = round(sz["risk_eur"] * _scale, 2)
+
+                    allocations[s.ticker] = sz["notional_eur"]
+                    plan_rows.append((s, sz))
+                    heat_used += sz["risk_eur"]
+                    cash_left -= sz["notional_eur"]
+
+                lines.append(f"📋 *{len(setups)} setup(s)* → *{len(plan_rows)}* dentro dos caps")
+                lines.append("")
+
+                from core.swing_setups import format_otoco_telegram as _otoco
+                for s, sz in plan_rows:
+                    lines.append(f"*{s.ticker}* · {s.setup_type} · R:R {s.rr_ratio:.1f}")
+                    lines += _otoco(s, sz["shares"])
+                    lines.append(
+                        f"`  risco €{sz['risk_eur']:.0f} · posição ≈ €{sz['notional_eur']:,.0f}`"
+                    )
+                    if s.rs_vs_spy_63d is not None:
+                        lines.append(f"  _RS {s.rs_vs_spy_63d*100:+.0f}pp vs SPY · "
+                                     f"ATR {(s.atr_pct or 0)*100:.1f}%_")
+                    lines.append("")
+
+                if skipped:
+                    lines.append("⏭️ *Fora dos caps:*")
+                    for t, why in skipped[:5]:
+                        lines.append(f"  · `{t}` — _{why}_")
+                    lines.append("")
+
+                _deployed = sum(allocations.values())
+                _final_cash = cash_amount - _deployed
+                lines.append(f"💸 Deploy total: *€{_deployed:,.0f}*")
+                lines.append(f"🔥 Heat usado: *€{heat_used:.0f}* ({heat_used/equity*100:.2f}% do equity)")
+                lines.append(f"💰 Cash restante: *€{_final_cash:,.0f}*")
+
+                if allocations:
+                    lines.append("")
+                    lines.append(
+                        "_Coloca as 3 ordens como bracket OTOCO: A dispara, B+C ficam "
+                        "activas como par OCO. Se A nunca preencher, nada fica em risco._"
+                    )
+                    lines.append(
+                        "_Se o broker não tiver OTOCO nativo: coloca A; assim que "
+                        "preencher, coloca B+C imediatamente. NUNCA segures a posição "
+                        "sem a ordem C viva._"
+                    )
+                    lines.append(
+                        f"_Break-even ratchet a +1R · time stop {TIME_STOP_DAYS} sessões._"
+                    )
+
+                _reply("\n".join(lines))
+
+                # Persist watchdog state so cron + /scan_now see this run
+                try:
+                    _dd = _Path("/data") if _Path("/data").exists() else _Path(__file__).parent / "data"
+                    _ws_path = _dd / "watchdog_state.json"
+                    _ws_path.write_text(_json.dumps({
+                        "timestamp":        _dt.now().isoformat(timespec="seconds"),
+                        "total_budget":     float(cash_amount),
+                        "deployed_eur":     float(_deployed),
+                        "held_cash_eur":    float(_final_cash),
+                        "deployed_tickers": list(allocations.keys()),
+                        "notified_tickers": [],
+                        "scorer_used":      "swing",
+                    }, indent=2))
+                except Exception as _we:
+                    logging.debug(f"[cash/swing] persist watchdog_state failed: {_we}")
+
+                # Persist proposal for /deployed comparison. Swing rows carry
+                # the price levels so a later fill can be judged against the
+                # PLAN, not just against "did we suggest this ticker".
+                try:
+                    _proposal_path = (
+                        _Path("/data") if _Path("/data").exists() else _Path(__file__).parent / "data"
+                    ) / "last_cash_proposal.json"
+                    _proposal_path.write_text(_json.dumps({
+                        "timestamp":   _dt.now().isoformat(timespec="seconds"),
+                        "budget":      float(cash_amount),
+                        "cash_inflow": float(cash_amount),
+                        "freed_cash":  0.0,
+                        "scorer_used": "swing",
+                        "actions": [
+                            {
+                                "ticker":          s.ticker,
+                                "bucket":          "SWING",
+                                "recommended_eur": float(sz["notional_eur"]),
+                                "setup_type":      s.setup_type,
+                                "entry":           s.entry,
+                                "stop":            s.stop,
+                                "target":          s.target,
+                                "rr_ratio":        s.rr_ratio,
+                                "risk_eur":        sz["risk_eur"],
+                                "time_stop_days":  s.time_stop_days,
+                                "ann_alpha_pct":   None,
+                                "score":           None,
+                                "win_prob":        None,
+                                "kelly_alloc":     None,
+                            }
+                            for s, sz in plan_rows
+                        ],
+                    }, indent=2))
+                except Exception as _pe:
+                    logging.debug(f"[cash/swing] persist proposal failed: {_pe}")
+
+            except Exception as _e:
+                logging.error(f"[cash/swing] {_e}", exc_info=True)
+                _reply(f"❌ Allocation (swing) falhou: `{_md_safe(_e)}`")
+
         def _run_allocation():
             try:
                 from portfolio.portfolio import get_positions
@@ -6883,14 +7176,16 @@ def _handle_command(text: str) -> None:
                 from core.tax_engine import should_rotate as tax_should_rotate
                 from core.scoring_dispatch import get_active_scorer
 
-                # ── Watchlist mode (default after F.5 REVERT) ───────────
-                # When scoring mode is "watchlist", /cash uses the honest
-                # filter as candidate source. Sizing is equal-weight
-                # across qualifiers (no edge-weighted allocation). Same
-                # concentration cap + regime cash buffer respected.
-                # Legacy Kelly+ML path runs only when SCORING_MODE is
-                # composite or dislocation.
-                if get_active_scorer() == "watchlist":
+                # ── Mode dispatch ───────────────────────────────────────
+                # swing (default): risk-based sizing off each setup's stop
+                #   distance. watchlist: equal-weight across the long-term
+                #   honest filter. Legacy Kelly+ML path runs only for
+                #   composite / dislocation.
+                _mode = get_active_scorer()
+                if _mode == "swing":
+                    _run_allocation_swing(cash_amount)
+                    return
+                if _mode == "watchlist":
                     _run_allocation_watchlist(cash_amount)
                     return
 
@@ -9883,7 +10178,72 @@ def _handle_command(text: str) -> None:
                 # you one thing in one place and another somewhere else.
                 session = ScoringSession()
 
-                # ── Watchlist mode (default after F.5 REVERT) ────────────
+                # ── Swing mode (default since Phase 1, 2026-07-27) ───────
+                # Emits complete trade plans (entry/stop/target/time stop),
+                # not a list of names. No LLM triage on this path: drop
+                # attribution exists to explain why something FELL, and
+                # swing buys strength — so the classifier has nothing to
+                # add and costs API credits for no signal.
+                if session.scorer == "swing":
+                    from core.swing_setups import (
+                        get_swing_setups, format_swing_telegram, TIME_STOP_DAYS,
+                    )
+
+                    _source = "full" if "--full" in parts else "default"
+                    if _source == "full":
+                        _reply("⏳ _Scan full universe (~1500 tickers) — só barras OHLCV, ~5-10min._")
+
+                    setups = get_swing_setups(source=_source)
+
+                    # Account equity drives risk-based sizing. Failure here
+                    # degrades to "no size shown", never to a wrong size.
+                    _equity_eur, _usdeur = 0.0, 1.0
+                    try:
+                        from portfolio.portfolio import get_positions
+                        from data.market_client import get_usdeur as _gu
+                        _usdeur = _gu()
+                        _positions = get_positions() or {}
+                        _equity_usd = sum(
+                            float(p.get("total_cost") or p.get("value_eur")
+                                  or p.get("cost_eur") or 0)
+                            for p in _positions.values()
+                        )
+                        _equity_eur = _equity_usd * _usdeur + max(0.0, _held_cash)
+                    except Exception as _eq_err:
+                        logging.warning(f"[scan_now/swing] equity lookup failed: {_eq_err}")
+
+                    try:
+                        from core.market_regime import compute_regime
+                        _regime = compute_regime()
+                        _r_label = _regime.get("regime_label", "?")
+                        _r_score = _regime.get("regime_score", 50.0)
+                    except Exception:
+                        _r_label, _r_score = "?", 50.0
+                    _badge = {"FROTHY": "🟦", "NEUTRAL": "🟨", "PANIC": "🟥"}.get(_r_label, "⚪")
+
+                    from zoneinfo import ZoneInfo as _ZI
+                    _ts_now = _dt.now(_ZI("Europe/Lisbon")).strftime("%Y-%m-%d %H:%M")
+                    header_lines = [
+                        f"⚡ *Swing Setups* — `{_ts_now}`",
+                        f"{_badge} Regime: *{_r_label}* ({_r_score:.0f}/100)",
+                    ]
+                    if _equity_eur > 0:
+                        header_lines.append(
+                            f"📊 Equity: *€{_equity_eur:,.0f}* — size a 0.75% risco/trade"
+                        )
+                    else:
+                        header_lines.append("📊 Equity desconhecido — sizing não mostrado")
+
+                    _reply(format_swing_telegram(
+                        setups,
+                        header="\n".join(header_lines),
+                        equity_eur=_equity_eur,
+                        usd_eur=_usdeur,
+                        include_disclaimer=True,
+                    ))
+                    return
+
+                # ── Watchlist mode (long-term book; explicit opt-in) ─────
                 # Honest filter, no ranking pretension. Composes the
                 # output via core/honest_watchlist.py.
                 if session.scorer == "watchlist":
@@ -9947,7 +10307,7 @@ def _handle_command(text: str) -> None:
                                     _hl, max_results=2, indent="  "
                                 )
 
-                    body += f"\n\n_Próximo cron auto: amanhã 18h00 Lisboa._"
+                    body += f"\n\n_Próximo cron auto: hoje 22h10 Lisboa (após fecho US)._"
                     _reply(body)
                     return
 
@@ -10075,7 +10435,7 @@ def _handle_command(text: str) -> None:
                         lines.append(f"  `{opp['ticker']:<6}` — _{r.exclude_reason}_")
 
                 lines.append("")
-                lines.append(f"_Próximo cron auto: amanhã 18h00 Lisboa._")
+                lines.append(f"_Próximo cron auto: hoje 22h10 Lisboa (após fecho US)._")
 
                 _reply("\n".join(lines))
             except Exception as e:

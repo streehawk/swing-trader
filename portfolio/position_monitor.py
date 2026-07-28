@@ -192,9 +192,17 @@ TRIGGER_ROUTINE            = "ROUTINE"
 TRIGGER_EDGE_GONE          = "EDGE_GONE"            # modelo diz: alpha < threshold → edge evaporou
 TRIGGER_DIP_TO_MOMENTUM    = "DIP_TO_MOMENTUM"      # dip recuperou com momentum → modo trailing stop
 
+TRIGGER_SWING_EXIT         = "SWING_EXIT"           # stop / breakeven / trail / time stop
+TRIGGER_SWING_PARTIAL      = "SWING_PARTIAL"        # alvo atingido → realizar 50%
+TRIGGER_SWING_RAISE_STOP   = "SWING_RAISE_STOP"     # subir a ordem de stop
+
 # Stop-loss: se o preço cair STOP_LOSS_PCT% abaixo do preço de entrada, sair.
-# Configurável via env var POSITION_STOP_LOSS_PCT (default 12%).
-_STOP_LOSS_PCT = float(os.getenv("POSITION_STOP_LOSS_PCT", "0.12"))
+# Configurável via env var POSITION_STOP_LOSS_PCT.
+# Phase 3 retune (2026-07-27): 0.12 → 0.08. A 12% stop was sized for a
+# 90-day DIP recovery thesis; on a tactical horizon it lets a loser run to
+# ~3× the risk a swing plan budgets. SWING positions ignore this entirely —
+# they carry their own stop from the plan.
+_STOP_LOSS_PCT = float(os.getenv("POSITION_STOP_LOSS_PCT", "0.08"))
 
 # Threshold de edge mínima: se pred_up cair abaixo deste valor, o modelo
 # não encontra alpha suficiente para justificar manter a posição.
@@ -313,6 +321,80 @@ def _classify_trigger(
     delta = record.alert_win_prob - new_win_prob
     _pos_type = getattr(record, "position_type", "DIP")
 
+    if _pos_type == "SWING":
+        # Mechanical plan execution — shares core/swing_exits with
+        # conviction_radar so the two monitors cannot disagree about where
+        # a stop is. Returns early: none of the ML triggers below (EDGE_GONE,
+        # DETERIORATION, EARLY_ALPHA) apply to a plan-managed trade, and
+        # DIPRADAR_USE_ML_SCORE=0 makes most of them inert anyway.
+        from core.swing_exits import (
+            SwingPlan, SwingState, evaluate_swing_exit, trading_days_to_calendar,
+            MECHANICAL_EXITS, SWING_TARGET_PARTIAL, SWING_RAISE_STOP,
+        )
+        if not record.plan_stop or not record.plan_target:
+            logger.warning(
+                f"[monitor] {record.ticker}: SWING sem plano (stop/target) — "
+                f"sem gestão automática. Corrige via /conviction plan."
+            )
+            return TRIGGER_ROUTINE
+
+        _atr = None
+        try:
+            from core.swing_setups import _wilder_atr
+            if price_history is not None and not price_history.empty:
+                _atr = _wilder_atr(price_history)
+        except Exception as _e:
+            logger.debug(f"[monitor] {record.ticker} swing ATR: {_e}")
+
+        plan = SwingPlan(
+            entry=float(record.plan_entry or record.alert_price),
+            stop=float(record.plan_stop),
+            target=float(record.plan_target),
+            time_stop_days=trading_days_to_calendar(record.plan_time_stop_days or 15),
+        )
+        state = SwingState(
+            current_stop=record.swing_stop or 0.0,
+            high_water=record.swing_high_water or 0.0,
+            partial_taken=bool(record.swing_partial_taken),
+        )
+        decision = evaluate_swing_exit(
+            plan, state,
+            current_price=current_price, atr=_atr, days_held=record.days_held,
+        )
+
+        # Persist the ratchet immediately. Same reasoning as BUG-26 for
+        # trailing_high: the full write at the end of the tick is many
+        # lines away and a network failure in between would lose the new
+        # stop, letting the next tick evaluate against a looser level.
+        _changed = (
+            decision.new_stop != record.swing_stop
+            or decision.high_water != record.swing_high_water
+        )
+        record.swing_stop = decision.new_stop
+        record.swing_high_water = decision.high_water
+        if decision.trigger == SWING_TARGET_PARTIAL:
+            record.swing_partial_taken = True
+        record.swing_last_decision = decision.trigger
+        # Stash the live decision for the message builder. A non-field
+        # attribute, so asdict() ignores it and nothing is persisted.
+        # Re-deriving it downstream would NOT be equivalent: by then the
+        # ratchet is already saved, so a re-run sees stop_moved=False and
+        # would render a HOLD message for a RAISE_STOP trigger.
+        record._swing_decision = decision
+        if _changed:
+            try:
+                position_db.update_record(record)
+            except Exception as _pe:
+                logger.warning(f"[monitor] {record.ticker}: swing state persist failed ({_pe})")
+
+        if decision.trigger in MECHANICAL_EXITS:
+            return TRIGGER_SWING_EXIT
+        if decision.trigger == SWING_TARGET_PARTIAL:
+            return TRIGGER_SWING_PARTIAL
+        if decision.trigger == SWING_RAISE_STOP:
+            return TRIGGER_SWING_RAISE_STOP
+        return TRIGGER_ROUTINE
+
     if _pos_type == "MOMENTUM":
         # Trailing stop ATR-based: adapta-se à volatilidade real do stock.
         # Um trailing stop fixo de 12% sempre desperdiça 12% do pico — errado.
@@ -341,7 +423,11 @@ def _classify_trigger(
 
         if _trailing_high > 0 and record.days_held >= 3:
             # ATR-based trailing stop: adapta-se à volatilidade real do stock.
-            _fallback_pct = float(os.getenv("MOMENTUM_TRAILING_STOP_PCT", "0.12"))
+            # Phase 3 retune: 0.12 → 0.08 (fallback) and 2.5 → 1.5 ATR below.
+            # A 2.5×ATR trail gives back roughly a quarter of a swing-scale
+            # move before firing; the ATR floor drops 0.08 → 0.04 for the
+            # same reason. Both stay env-overridable.
+            _fallback_pct = float(os.getenv("MOMENTUM_TRAILING_STOP_PCT", "0.08"))
             _atr_stop_pct = None  # None = ATR não calculado ainda
             _atr_source   = "fallback"
             # BUG-27: reuse the 1y history already fetched in _monitor_one
@@ -363,7 +449,9 @@ def _classify_trigger(
                     _atr = float(_tr.iloc[-14:].mean())
                     _price = float(_hist_m["Close"].iloc[-1])
                     if _price > 0 and _atr > 0:
-                        _atr_stop_pct = max(2.5 * _atr / _price, 0.08)
+                        _atr_mult = float(os.getenv("MOMENTUM_ATR_MULTIPLIER", "1.5"))
+                        _atr_floor = float(os.getenv("MOMENTUM_ATR_MIN_STOP_PCT", "0.04"))
+                        _atr_stop_pct = max(_atr_mult * _atr / _price, _atr_floor)
                         _atr_source   = f"ATR({_atr:.2f}/{_price:.2f}={_atr/_price*100:.1f}%)"
             except Exception as _atr_err:
                 logger.warning(
@@ -936,7 +1024,31 @@ def _monitor_one(
     # ── 8. Build Telegram message ─────────────────────────────────────────────
     msg: Optional[str] = None
 
-    if trigger == TRIGGER_TAKE_PROFIT:
+    if trigger in (TRIGGER_SWING_EXIT, TRIGGER_SWING_PARTIAL, TRIGGER_SWING_RAISE_STOP):
+        # Message text comes from swing_exits so the daily monitor, the
+        # conviction radar and the intraday sweep all describe the same
+        # stop in the same words.
+        from core.swing_exits import format_exit_alert
+        _dec = getattr(record, "_swing_decision", None)
+        if _dec is None:
+            logger.error(
+                f"[monitor] {record.ticker}: swing trigger {trigger} without a "
+                f"stashed decision — skipping alert rather than guessing."
+            )
+            msg = None
+        else:
+            msg = format_exit_alert(record.ticker, _dec, days_held=record.days_held)
+
+        if _dec is not None and trigger == TRIGGER_SWING_EXIT:
+            record.status       = "CLOSED"
+            record.close_reason = _dec.trigger
+            record.closed_at    = _now_lisbon_iso()
+            record.close_price  = current_price
+        # PARTIAL and RAISE_STOP leave the position ACTIVE: the user sells
+        # half / moves the resting order manually in T212, and the flags
+        # persisted above stop the same alert firing again tomorrow.
+
+    elif trigger == TRIGGER_TAKE_PROFIT:
         msg = _build_take_profit_alert(record, current_price)
 
     elif trigger == TRIGGER_STOP_LOSS:

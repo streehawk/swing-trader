@@ -22,8 +22,12 @@ def handle_conviction(parts: list[str]) -> None:
             "_Trackeia posições com o motor do DipRadar mas sem contaminar o ML._\n\n"
             "*Comandos:*\n"
             "  `/conviction add TICKER PREÇO SHARES TIPO [PICO]`\n"
-            "    Tipos: `DIP`, `MOMENTUM`, `CORE`. CORE → never_sell automático.\n"
+            "    Tipos: `SWING`, `DIP`, `MOMENTUM`, `CORE`. CORE → never_sell automático.\n"
             "    Auto-faz `/buy` se o ticker não está na carteira.\n"
+            "  `/conviction plan TICKER ENTRY STOP TARGET [DIAS]`\n"
+            "    Anexa plano swing (marca a posição como SWING). Saídas mecânicas:\n"
+            "    stop → breakeven a +1R → trail 1.5×ATR a +1.5R, parcial 50% no alvo,\n"
+            "    time stop aos DIAS (default 15 sessões).\n"
             "  `/conviction list` — todas as activas + P&L (🔒 = never_sell)\n"
             "  `/conviction TICKER` — deep-dive condensado (sinais hold/close)\n"
             "  `/conviction close TICKER PREÇO [motivo]` — fechar + gravar outcome\n"
@@ -216,6 +220,50 @@ def handle_conviction(parts: list[str]) -> None:
             f"  📊 P&L: *${outcome['pnl_abs']:+.2f}* ({outcome['pnl_pct']:+.1f}%) em {outcome['days_held']}d\n"
             f"  🏷️ Motivo: _{outcome['reason']}_\n\n"
             f"_Gravado em `conviction_outcomes.json` (não entra em ML)._"
+        )
+        return
+
+    if sub == "plan":
+        if len(parts) < 5:
+            _bc._reply(
+                "⚠️ Uso: `/conviction plan TICKER ENTRY STOP TARGET [DIAS]`\n"
+                "_Ex: `/conviction plan AAPL 231.40 224.10 246.20`_\n"
+                "_DIAS = time stop em sessões (default 15)._"
+            )
+            return
+        ticker = parts[2].upper().strip()
+        try:
+            entry  = float(parts[3])
+            stop   = float(parts[4])
+            target = float(parts[5]) if len(parts) > 5 else 0.0
+        except ValueError:
+            _bc._reply("⚠️ ENTRY, STOP e TARGET têm de ser números.")
+            return
+        if len(parts) < 6:
+            _bc._reply("⚠️ Falta o TARGET. Uso: `/conviction plan TICKER ENTRY STOP TARGET [DIAS]`")
+            return
+        try:
+            days = int(parts[6]) if len(parts) > 6 else 15
+        except ValueError:
+            _bc._reply("⚠️ DIAS tem de ser um inteiro.")
+            return
+        try:
+            pos = cr.set_swing_plan(ticker, entry, stop, target, time_stop_days=days)
+        except Exception as e:
+            _bc._reply(f"❌ Erro: `{e}`")
+            return
+        if not pos:
+            _bc._reply(f"⚠️ Convicção *{ticker}* não encontrada. Cria com `/conviction add` primeiro.")
+            return
+        _r = entry - stop
+        _rr = (target - entry) / _r if _r > 0 else 0.0
+        _bc._reply(
+            f"⚡ *{ticker}* → SWING\n"
+            f"`entry  {entry:>9.2f}`\n"
+            f"`stop   {stop:>9.2f}  ({(stop/entry-1)*100:+.1f}% = 1R = ${_r:.2f})`\n"
+            f"`target {target:>9.2f}  (R:R {_rr:.1f})`\n"
+            f"`time   {days} sessões`\n\n"
+            f"_Breakeven a +1R · trail 1.5×ATR a +1.5R · parcial 50% no alvo._"
         )
         return
 

@@ -262,10 +262,12 @@ class TestSectorRelativeAsColumn:
 # ── Dispatcher 3rd mode + flag default ───────────────────────────────
 
 class TestDispatcherWatchlistMode:
-    def test_default_no_env_is_watchlist(self, monkeypatch):
+    def test_default_no_env_is_swing(self, monkeypatch):
+        """Phase 1 (2026-07-27): swing replaced watchlist as the default.
+        Watchlist stays reachable, but only via explicit opt-in."""
         monkeypatch.delenv("DIPRADAR_SCORING_MODE", raising=False)
         monkeypatch.delenv("DIPRADAR_USE_DISLOCATION", raising=False)
-        assert get_active_scorer() == "watchlist"
+        assert get_active_scorer() == "swing"
 
     def test_explicit_watchlist(self, monkeypatch):
         monkeypatch.setenv("DIPRADAR_SCORING_MODE", "watchlist")
@@ -289,10 +291,10 @@ class TestDispatcherWatchlistMode:
         monkeypatch.setenv("DIPRADAR_USE_DISLOCATION", "1")
         assert get_active_scorer() == "dislocation"
 
-    def test_invalid_mode_falls_back_to_watchlist(self, monkeypatch):
+    def test_invalid_mode_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("DIPRADAR_SCORING_MODE", "invalid_garbage")
         monkeypatch.delenv("DIPRADAR_USE_DISLOCATION", raising=False)
-        assert get_active_scorer() == "watchlist"
+        assert get_active_scorer() == "swing"
 
     def test_session_freezes_mode_at_construction(self, monkeypatch):
         monkeypatch.setenv("DIPRADAR_SCORING_MODE", "watchlist")

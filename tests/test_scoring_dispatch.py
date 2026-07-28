@@ -27,11 +27,12 @@ from core.scoring_dispatch import (
 # ── Default + env semantics ──────────────────────────────────────────
 
 class TestFlagSemantics:
-    def test_default_is_watchlist(self, monkeypatch):
-        """Default after F.5 REVERT changed from 'dislocation' to 'watchlist'."""
+    def test_default_is_swing(self, monkeypatch):
+        """Default history: 'dislocation' → 'watchlist' (F.5 REVERT) →
+        'swing' (Phase 1, 2026-07-27, pivot to swing trading)."""
         monkeypatch.delenv("DIPRADAR_USE_DISLOCATION", raising=False)
         monkeypatch.delenv("DIPRADAR_SCORING_MODE", raising=False)
-        assert get_active_scorer() == "watchlist"
+        assert get_active_scorer() == "swing"
 
     def test_flag_1_is_dislocation(self, monkeypatch):
         monkeypatch.setenv("DIPRADAR_USE_DISLOCATION", "1")

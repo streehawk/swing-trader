@@ -114,6 +114,22 @@ class PositionRecord:
     moonbag_active:       bool                   = False  # True após primeira realização parcial
     moonbag_target:       float                  = 0.0   # preço alvo para o segundo take profit
 
+    # ── SWING plan (Phase 3) ─────────────────────────────────────────────
+    # Set when position_type == "SWING". plan_stop is the ORIGINAL stop and
+    # never mutates; swing_stop is the ratcheted level (breakeven → trail).
+    # Keeping both is what makes 1R recoverable after the fact, which is the
+    # unit Phase 4's validation gate is expressed in.
+    # Defaults keep records written before Phase 3 loading unchanged.
+    plan_entry:           Optional[float]        = None
+    plan_stop:            Optional[float]        = None
+    plan_target:          Optional[float]        = None
+    plan_time_stop_days:  Optional[int]          = None
+    setup_type:           Optional[str]          = None   # PULLBACK | BREAKOUT
+    swing_stop:           float                  = 0.0
+    swing_high_water:     float                  = 0.0
+    swing_partial_taken:  bool                   = False
+    swing_last_decision:  Optional[str]          = None
+
     # Outcome
     closed_at:            Optional[str]          = None
     close_reason:         Optional[str]          = None
