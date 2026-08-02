@@ -463,6 +463,40 @@ Per the ticket's own fallback clause, the bias is now **machine-enforced rather 
 
 ---
 
+## 🔬 Edge-search protocol — H1 postmortem (NO-EDGE)
+
+**H1 — panic mean reversion in quality large caps.** Buy a liquid name that is still above its SMA200 but has flushed ≥ 2.5 ATR over ten sessions with ≥ 3 of the last 4 closes down; bid a LIMIT 0.5 ATR under the close; exit on the first close above SMA5, a 2 ATR hard stop, or 7 bars. Registered in `edge_search_protocol.md` with no target and no break-even ratchet — mean reversion takes many small wins, and Phase 1's 2R shape was pre-registered out rather than dropped after seeing a result. Run on the original 229-name quality list (SURVIVOR data), 273,654 bars, 2021-08 → 2026-06. **1,509 trades, 63.5% win rate, expectancy +0.028R after 10bps costs, PF 1.110, t = +1.64, and the sign held in both the train and test halves.** That is the first genuinely non-zero, correctly-signed result this project has produced — and it still fails the pre-registered gate, which asked for ≥ +0.10R and PF ≥ 1.2. Three things explain the shortfall and none of them are fixable by tuning: the whole 2022 bear year printed **−0.116R at t = −2.55**, because a strategy with its regime gate registered OFF buys every step of a sustained downtrend; the signal is heavily clustered (19 names can flush on one day, 37% of trades land on days with more than five signals), so under the live 2-position cap **75% of signals are rejected and the 377 trades you could actually take expectancy out at −0.009R while the 1,132 you were capped out of made +0.040R**; and the universe is survivor data, so the true number sits below the measured one by an unknown margin. Per the protocol, H1 closes as **NO-EDGE** (0 < expectancy < +0.10R). Not FAIL — the effect appears to be real, just too small to pay for its own capacity constraint. Nothing is deployed; nothing was tuned.
+
+| Run | #Trades | Win% | AvgWin R | AvgLoss R | Expectancy | Breakeven Win% | PF | t |
+|---|---|---|---|---|---|---|---|---|
+| costs OFF | 1509 | 64.6% | +0.46 | −0.69 | **+0.049** | 60.3% | 1.200 | +2.90 |
+| costs ON (10bps) | 1509 | 63.5% | +0.44 | −0.69 | **+0.028** | 61.0% | 1.110 | +1.64 |
+| stress (15bps) | 1509 | 62.8% | +0.44 | −0.69 | **+0.017** | 61.3% | 1.067 | +1.01 |
+| train (≤ 2025-01-05) | 1076 | 63.6% | +0.43 | −0.69 | **+0.023** | 61.5% | 1.093 | +1.18 |
+| test (> 2025-01-05) | 433 | 63.3% | +0.47 | −0.70 | **+0.039** | 59.9% | 1.152 | +1.20 |
+
+Code: `strategies/panic_reversion.py` (entry), `core/h1_backtest.py` (limit-fill simulator + H1 exit ladder), `tests/test_panic_reversion.py` (54 tests), `scripts/run_h1_validation.py` (the ladder). Phase 1 and Phase 1B entries are untouched. The closed-end-fund blacklist the Phase 1B postmortem asked for now lives in `strategies/filters.py` and is applied by every strategy.
+
+---
+
+## 🔬 Edge-search protocol — H2 postmortem (FAIL)
+
+**H2 — strong-gap continuation.** The only hypothesis in this project generated from its own data: in Phase 1, the 35 trades that gapped beyond the stop-limit cap — the ones the system refused to chase — won 68.6% at +0.43R. Registered interpretation: a gap violent enough to blow through a chase guard reflects real flow that continues for days. The protocol was explicit that those 35 trades were noticed post-hoc, are a spent sample, and prove nothing; H2 re-tests the idea on a fresh pre-registered configuration. Rules: open gaps ≥ 1 ATR above the prior close AND clears the 20-day high AND closes on RVOL ≥ 2, with yesterday's close > SMA50 > SMA200 and SPY > SMA200; buy the NEXT open at market, one day late, so only closed bars are used; exit on the first close below SMA10, a 1.5 ATR stop, a 15-bar time stop, break-even ratchet at +1R, no target. Universe: the 407-name $2B+ screen, 395 tradeable. **180 trades, 29.4% win rate, expectancy −0.069R after costs, PF 0.838, negative in BOTH splits.** The founding observation is refuted: 29.4% is not 68.6%, and the strategy is already at −0.012R *before* costs, so 35 trades' worth of apparent edge was selection and noise. The shape is right — the SMA10 trail does what it was registered to do, letting winners average +1.21R against −0.60R losers — but the hit rate is nowhere near the 33.2% the payoff needs. Slippage is charged per the protocol's rule 4: 15bps for the 222 names under 1M median volume, 10bps for the 173 above, and at a uniform 15bps the result degrades to −0.100R, which matters because H2 buys the opening auction of a gap day, the worst liquidity moment in a session. Per the protocol, H2 closes as **FAIL** (expectancy ≤ 0). Nothing was tuned; nothing is deployed.
+
+| Run | #Trades | Win% | AvgWin R | AvgLoss R | Expectancy | Breakeven Win% | PF | t |
+|---|---|---|---|---|---|---|---|---|
+| costs OFF | 180 | 30.6% | +1.22 | −0.56 | **−0.012** | 31.2% | 0.968 | −0.16 |
+| costs ON (10/15bps) | 180 | 29.4% | +1.21 | −0.60 | **−0.069** | 33.2% | 0.838 | −0.89 |
+| stress (15bps flat) | 180 | 28.3% | +1.17 | −0.60 | **−0.100** | 34.0% | 0.768 | −1.35 |
+| train (≤ 2024-12-24) | 139 | 30.9% | +1.11 | −0.57 | **−0.054** | 34.2% | 0.864 | −0.65 |
+| test (> 2024-12-24) | 41 | 24.4% | +1.65 | −0.69 | **−0.118** | 29.4% | 0.773 | −0.61 |
+
+**The by-product worth keeping: a real point-in-time earnings calendar.** H2's rules exclude earnings gaps specifically so it does not silently become H3 (post-earnings drift is a different hypothesis with a different counterparty). Every earlier run in this project disabled the earnings gate for want of a calendar. `scripts/fetch_earnings_dates.py` now builds one from **EDGAR 8-K item 2.02** filings — free, filed on the day, genuinely point-in-time — covering **395/407 tickers (97.1%), 9,913 filings**, with 381 names at full quarterly coverage. It earned its keep immediately: of the 680 bars that passed every other H2 gate, **500 (73.5%) were earnings reactions**. Without the calendar H2 would have run ~680 trades, three-quarters of them PEAD, under the wrong hypothesis' name. Names the calendar cannot cover (10 foreign issuers filing 6-K rather than 8-K) are excluded rather than waved through, because gating some tickers and not others biases the sample by ticker.
+
+Code: `strategies/gap_continuation.py` (entry), `core/h2_backtest.py` (market-entry simulator + SMA10 trail), `core/protocol_gate.py` (the shared H1–H3 gate, lifted out so three hypotheses cannot drift into three definitions of "passed"), `tests/test_gap_continuation.py` (53 tests), `scripts/run_h2_validation.py`, `scripts/fetch_earnings_dates.py`.
+
+---
+
 ## 📚 History: why watchlist and not ranking?
 
 DipRadar was built around an ML-ranked alpha thesis. Through Q2 2026 we shipped:

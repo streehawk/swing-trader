@@ -401,6 +401,8 @@ def replay_ticker(
     costs_bps: Optional[float] = None,
     time_stop_bars: int = 15,
     warmup: int = _WARMUP_BARS,
+    strategy: str = "trend_pullback",
+    strategy_kwargs: Optional[dict] = None,
 ) -> list[Trade]:
     """Replay one ticker end to end.
 
@@ -412,8 +414,16 @@ def replay_ticker(
     REINDEXED onto this ticker's dates, so slicing by position gives SPY
     as of the same bar — never a later one. Passing None makes both gates
     fail closed (no trades), matching live behaviour on a SPY fetch error.
+
+    `strategy` selects the ENTRY only. Everything downstream — sizing,
+    the exit ladder, the fill simulator — is identical whichever entry
+    produced the plan, which is what makes a strategy comparison
+    attributable to the entry signal alone. Defaults to Phase 1 so
+    existing callers are unaffected.
     """
-    from core.swing_setups import evaluate_bars
+    from strategies import get_strategy
+    evaluate_bars = get_strategy(strategy)
+    skw = strategy_kwargs or {}
 
     lower = {c.lower(): c for c in bars.columns}
     bars_lower = bars.rename(columns={v: k for k, v in lower.items()})
@@ -433,6 +443,7 @@ def replay_ticker(
         setup = evaluate_bars(
             ticker, bars_lower.iloc[: i + 1],
             spy_hist=None if spy_aligned is None else spy_aligned.iloc[: i + 1],
+            **skw,
         )
         if not setup.qualifies:
             i += 1
@@ -456,6 +467,8 @@ def run_backtest(
     costs: Optional[CostModel] = None,
     time_stop_bars: int = 15,
     progress_every: int = 25,
+    strategy: str = "trend_pullback",
+    strategy_kwargs: Optional[dict] = None,
 ) -> list[Trade]:
     """Replay every ticker in a long-format OHLCV frame.
 
@@ -489,6 +502,7 @@ def run_backtest(
             all_trades.extend(replay_ticker(
                 bars, t, spy_bars=spy_bars,
                 costs=costs, time_stop_bars=time_stop_bars,
+                strategy=strategy, strategy_kwargs=strategy_kwargs,
             ))
         except Exception as e:
             log.warning(f"[backtest] {t}: {e}")
@@ -527,9 +541,17 @@ def compute_stats(trades: list[Trade]) -> dict:
     peak = np.maximum.accumulate(curve)
     drawdown = curve - peak
 
+    # Breakeven win rate = avgLoss / (avgWin + avgLoss). The win rate at
+    # which this payoff ratio nets to zero — the number the actual win
+    # rate has to beat for the system to make money at all.
+    _aw = float(wins.mean()) if len(wins) else 0.0
+    _al = float(-losses.mean()) if len(losses) else 0.0
+    breakeven_wr = (_al / (_aw + _al)) if (_aw + _al) > 0 else None
+
     return {
         "n_trades":        len(trades),
         "expectancy_r":    round(float(r.mean()), 4),
+        "breakeven_win_rate": round(breakeven_wr, 4) if breakeven_wr is not None else None,
         "median_r":        round(float(np.median(r)), 4),
         "total_r":         round(float(r.sum()), 2),
         "win_rate":        round(float(len(wins) / len(r)), 4),
@@ -650,7 +672,13 @@ GATE = {
 }
 
 
-def confirm_no_lookahead(prices: pd.DataFrame, *, n_tickers: int = 3) -> dict:
+def confirm_no_lookahead(
+    prices: pd.DataFrame,
+    *,
+    n_tickers: int = 3,
+    strategy: str = "trend_pullback",
+    strategy_kwargs: Optional[dict] = None,
+) -> dict:
     """P1-7 item 3 + acceptance — VERIFY no look-ahead, don't just claim it.
 
     The check: replay a ticker, then replay it again with 40 bars of a
@@ -677,14 +705,16 @@ def confirm_no_lookahead(prices: pd.DataFrame, *, n_tickers: int = 3) -> dict:
         if len(bars) < _WARMUP_BARS + 40:
             continue
 
-        base = replay_ticker(bars, t, spy_bars=spy, costs_bps=0)
+        base = replay_ticker(bars, t, spy_bars=spy, costs_bps=0,
+                             strategy=strategy, strategy_kwargs=strategy_kwargs)
 
         tail = pd.concat([bars.iloc[-1:]] * 40)
         tail.index = pd.date_range(bars.index[-1] + pd.Timedelta(days=1),
                                    periods=40, freq="B")
         tail = tail.copy()
         tail[["open", "high", "low", "close"]] *= 3.0     # violent fabricated rally
-        ext = replay_ticker(pd.concat([bars, tail]), t, spy_bars=spy, costs_bps=0)
+        ext = replay_ticker(pd.concat([bars, tail]), t, spy_bars=spy, costs_bps=0,
+                            strategy=strategy, strategy_kwargs=strategy_kwargs)
 
         cutoff = len(bars) - 1
         for a, b in zip(base, ext):
