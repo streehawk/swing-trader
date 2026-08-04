@@ -1,0 +1,600 @@
+{
+  "step": 1,
+  "run_date": "2026-08-03 20:34:09.766617+00:00",
+  "variant": "C2",
+  "basket": [
+    "QQQ",
+    "DIA",
+    "IWM",
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY"
+  ],
+  "costs_bps": {
+    "QQQ": 2.0,
+    "DIA": 2.0,
+    "IWM": 2.0,
+    "XLB": 5.0,
+    "XLE": 5.0,
+    "XLF": 5.0,
+    "XLI": 5.0,
+    "XLK": 5.0,
+    "XLP": 5.0,
+    "XLU": 5.0,
+    "XLV": 5.0,
+    "XLY": 5.0
+  },
+  "post_book_start": "2008-01-01",
+  "coverage": [
+    {
+      "ticker": "QQQ",
+      "first_bar": "1999-03-10",
+      "last_bar": "2026-08-03",
+      "total_bars": 6892,
+      "first_usable_bar": "1999-12-21",
+      "expected_inception": "1999-03",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Nasdaq-100"
+    },
+    {
+      "ticker": "DIA",
+      "first_bar": "1998-01-20",
+      "last_bar": "2026-08-03",
+      "total_bars": 7178,
+      "first_usable_bar": "1998-11-02",
+      "expected_inception": "1998-01",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Dow 30"
+    },
+    {
+      "ticker": "IWM",
+      "first_bar": "2000-05-26",
+      "last_bar": "2026-08-03",
+      "total_bars": 6584,
+      "first_usable_bar": "2001-03-13",
+      "expected_inception": "2000-05",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Russell 2000"
+    },
+    {
+      "ticker": "XLB",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Materials"
+    },
+    {
+      "ticker": "XLE",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Energy"
+    },
+    {
+      "ticker": "XLF",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Financials"
+    },
+    {
+      "ticker": "XLI",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Industrials"
+    },
+    {
+      "ticker": "XLK",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Technology"
+    },
+    {
+      "ticker": "XLP",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Staples"
+    },
+    {
+      "ticker": "XLU",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Utilities"
+    },
+    {
+      "ticker": "XLV",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Health care"
+    },
+    {
+      "ticker": "XLY",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Discretionary"
+    }
+  ],
+  "spy_drift_check": {
+    "checked": true,
+    "registered_bars": 8433,
+    "fresh_bars": 8434,
+    "dates_only_in_registered": 0,
+    "dates_only_in_fresh": 1,
+    "bars_with_changed_close": 26,
+    "worst_relative_change": 1.5321e-06,
+    "verdict": "DRIFTED \u2014 see counts; registered cache is NOT modified"
+  },
+  "control": {
+    "passed": true,
+    "n_trades_new": 146,
+    "n_trades_registered": 146,
+    "fields_compared": [
+      "entry_date",
+      "exit_date",
+      "entry_index",
+      "exit_index",
+      "bars_held",
+      "entry_price",
+      "exit_price",
+      "pct_return",
+      "mae_pct",
+      "mfe_pct",
+      "exit_reason"
+    ],
+    "mismatches": [],
+    "n_mismatches": 0,
+    "method": "SPY replayed through core/basket_backtest.run_instrument and compared trade-by-trade against the stored trades of the registered C2 verdict run"
+  },
+  "control_stats": {
+    "n_trades": 146,
+    "win_rate": 0.7466,
+    "avg_pct": 0.4363,
+    "median_pct": 0.7346,
+    "avg_win_pct": 1.1183,
+    "avg_loss_pct": -1.5729,
+    "worst_trade_pct": -9.592,
+    "best_trade_pct": 3.2268,
+    "profit_factor": 2.095,
+    "total_pct": 63.7,
+    "avg_hold_days": 3.62,
+    "days_in_market": 529,
+    "pct_days_in_market": null,
+    "t_stat": 3.2,
+    "exit_breakdown": {
+      "SIGNAL": 146
+    }
+  },
+  "lookahead": {
+    "QQQ": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 216,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "DIA": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 215,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "IWM": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 200,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLB": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 198,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLE": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 197,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLF": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 183,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLI": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 212,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLK": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 197,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLP": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 212,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLU": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 187,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLV": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 206,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "XLY": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 227,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    },
+    "SPY": {
+      "variant": "C2",
+      "fill_mode": "close",
+      "passed": true,
+      "trades_compared": 264,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null,
+      "non_vacuous": true
+    }
+  },
+  "lookahead_next_open_spy": {
+    "variant": "C2",
+    "fill_mode": "next_open",
+    "passed": true,
+    "trades_compared": 264,
+    "mismatches": [],
+    "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+    "note": null
+  },
+  "verdict": "READY FOR STEP 2"
+}

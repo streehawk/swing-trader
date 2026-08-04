@@ -1,0 +1,452 @@
+{
+  "generated": "2026-08-03T20:28:19.573279+00:00",
+  "source": "yfinance, auto_adjust=True (raw close retained as close_raw)",
+  "basket": [
+    {
+      "ticker": "QQQ",
+      "what": "Nasdaq-100",
+      "inception": "1999-03"
+    },
+    {
+      "ticker": "DIA",
+      "what": "Dow 30",
+      "inception": "1998-01"
+    },
+    {
+      "ticker": "IWM",
+      "what": "Russell 2000",
+      "inception": "2000-05"
+    },
+    {
+      "ticker": "XLB",
+      "what": "Materials",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLE",
+      "what": "Energy",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLF",
+      "what": "Financials",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLI",
+      "what": "Industrials",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLK",
+      "what": "Technology",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLP",
+      "what": "Staples",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLU",
+      "what": "Utilities",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLV",
+      "what": "Health care",
+      "inception": "1998-12"
+    },
+    {
+      "ticker": "XLY",
+      "what": "Discretionary",
+      "inception": "1998-12"
+    }
+  ],
+  "coverage": [
+    {
+      "ticker": "QQQ",
+      "first_bar": "1999-03-10",
+      "last_bar": "2026-08-03",
+      "total_bars": 6892,
+      "first_usable_bar": "1999-12-21",
+      "expected_inception": "1999-03",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Nasdaq-100"
+    },
+    {
+      "ticker": "DIA",
+      "first_bar": "1998-01-20",
+      "last_bar": "2026-08-03",
+      "total_bars": 7178,
+      "first_usable_bar": "1998-11-02",
+      "expected_inception": "1998-01",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Dow 30"
+    },
+    {
+      "ticker": "IWM",
+      "first_bar": "2000-05-26",
+      "last_bar": "2026-08-03",
+      "total_bars": 6584,
+      "first_usable_bar": "2001-03-13",
+      "expected_inception": "2000-05",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Russell 2000"
+    },
+    {
+      "ticker": "XLB",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Materials"
+    },
+    {
+      "ticker": "XLE",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Energy"
+    },
+    {
+      "ticker": "XLF",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Financials"
+    },
+    {
+      "ticker": "XLI",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Industrials"
+    },
+    {
+      "ticker": "XLK",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Technology"
+    },
+    {
+      "ticker": "XLP",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Staples"
+    },
+    {
+      "ticker": "XLU",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Utilities"
+    },
+    {
+      "ticker": "XLV",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Health care"
+    },
+    {
+      "ticker": "XLY",
+      "first_bar": "1998-12-22",
+      "last_bar": "2026-08-03",
+      "total_bars": 6944,
+      "first_usable_bar": "1999-10-07",
+      "expected_inception": "1998-12",
+      "inception_matches": true,
+      "post_book_bars": 4675,
+      "post_book_usable": true,
+      "gaps_gt_5_sessions": [],
+      "n_gaps_ge_2_sessions": 3,
+      "largest_gaps": [
+        {
+          "from": "2001-09-10",
+          "to": "2001-09-17",
+          "missing_sessions": 4
+        },
+        {
+          "from": "2006-12-29",
+          "to": "2007-01-03",
+          "missing_sessions": 2
+        },
+        {
+          "from": "2012-10-26",
+          "to": "2012-10-31",
+          "missing_sessions": 2
+        }
+      ],
+      "what": "Discretionary"
+    }
+  ],
+  "failures": [],
+  "spy_drift_check": {
+    "checked": true,
+    "registered_bars": 8433,
+    "fresh_bars": 8434,
+    "dates_only_in_registered": 0,
+    "dates_only_in_fresh": 1,
+    "bars_with_changed_close": 26,
+    "worst_relative_change": 1.5321e-06,
+    "verdict": "DRIFTED \u2014 see counts; registered cache is NOT modified"
+  },
+  "gaps_policy": "reported in missing weekdays, never bridged or interpolated"
+}

@@ -32,7 +32,7 @@
 
 ## 🤖 Commands
 
-### Honest scoring (default = watchlist)
+### Honest scoring (default = `swing` since 2026-07-27; `watchlist` via `DIPRADAR_SCORING_MODE=watchlist`)
 
 | Command | What it does |
 |---|---|
@@ -352,6 +352,53 @@ Surfaced in `/cash` header and used to compute the cash buffer in watchlist allo
 
 ---
 
+## 🧾 Research ledger — every hypothesis, every verdict
+
+One table, in the order things were run. Each row links to its own postmortem
+below. **Nothing in this ledger is deployed.** No threshold was moved after a
+result was seen, in either direction.
+
+| # | Hypothesis | Instrument | Sample | Verdict | Headline |
+|---|---|---|---|---|---|
+| F.5 | ML alpha ranking | 241 quality names | 2021–2026 | ❌ **REVERT** | top-decile 6m excess −1.09pp vs +5pp needed |
+| P1 | Trend pullback (`trend_pullback`) | 240 names | 666 trades | ❌ **NO EDGE** | −0.009R; 0.4pp under its own breakeven |
+| P1B | Dip in uptrend (`dip_in_uptrend`) | 3 universes | **0 trades** | ❌ **FAIL** | signal scarcity, not measured losses |
+| H1 | Panic mean reversion (`panic_reversion`) | 229 names | 1,509 trades | ⚠️ **NO-EDGE** | +0.028R — real but capacity-bound |
+| H2 | Gap continuation (`gap_continuation`) | 395 names | 180 trades | ❌ **FAIL** | −0.069R; founding observation refuted |
+| C1 | Connors RSI(2) < 5 (`rsi2`) | SPY | 80 trades | ⚠️ **MARGINAL** | best per trade, 80 < 100-trade floor |
+| **C2** | Connors cum-RSI < 35 (`rsi2`) | **SPY** | **146 trades** | ✅ **PASS** | **+0.436%/trade, PF 2.095, t=+3.20** |
+| **C3** | Connors cum-RSI < 50 (`rsi2`) | **SPY** | **207 trades** | ✅ **PASS** | **+0.336%/trade, PF 1.836, t=+2.98** |
+| A1 | C2 replication on a 12-ETF basket | 12 ETFs | 1,750 trades | ✅ **G1/G2/G3 PASS** | 12/12 positive, +0.330%/trade pooled |
+| H3 | Post-earnings drift (PEAD) | 395 names | — | 🕓 **QUEUED** | data precondition now met (EDGAR, 97.1%) |
+| H4 | Regime trend-following | SPY + QQQ | — | 🕓 **QUEUED** | own gate: drawdown, not R-expectancy |
+
+### Reading the two PASSes honestly
+
+C2 and C3 are the project's first pre-registered passes, and they are trustable
+in a way nothing before them was: SPY is a single continuously-listed ETF, so
+there is **no survivorship bias, no signal clustering, no capacity problem, and a
+2bps cost assumption that is actually defensible**. On 18.6 years of genuinely
+out-of-sample data (2008–2026 — the book was published on 1993–2007) the gate is
+cleared on every bar.
+
+Three caveats belong in the same breath as the verdict:
+
+1. **The edge is small.** +0.336% to +0.436% per trade after costs. That is real,
+   but it is not a large number, and it will not survive careless execution.
+2. **It has been decaying since publication.** Per-trade edge roughly halved
+   post-book: C1 +1.050% → +0.528%, C2 +0.814% → +0.436%, C3 +0.660% → +0.336%,
+   with win rates down 6–8pp. The direction of that trend is unfavourable.
+3. **It does not beat buy-and-hold on return.** 2.4–4.1% CAGR against SPY's
+   11.24%, because it holds SPY only 5.6–16.5% of the time. It beats buy-and-hold
+   only on a **drawdown-adjusted** basis — 14.0–14.9% max drawdown vs SPY's
+   51.9%, so MAR is modestly better (C3 0.28 vs 0.22). This is a cash-deployment
+   rule, not a replacement for owning the index, and it is only interesting if
+   the idle 84–94% of the time earns something.
+
+Full detail: [C-series postmortem](#-c-series-postmortem--c2-and-c3-pass-the-projects-first).
+
+---
+
 ## 🔬 Phase 4 verdict: the v2 filters help, but the edge is still zero
 
 **Decision: REVERT** (v2, 2026-07-28). Output: `data/validation_cache/swing_validation_2026-07-28.json`.
@@ -463,6 +510,60 @@ Per the ticket's own fallback clause, the bias is now **machine-enforced rather 
 
 ---
 
+## 🔬 Phase 1B postmortem — dip in an uptrend (FAIL, zero trades on three universes)
+
+**P1B — buy the quiet pullback inside a long-term uptrend**, registered in
+`Phase1B_Reversal_Strategy_Spec.md` (tickets P1B-1 … P1B-7). Rules: close > SMA50 >
+SMA200, average volume ≥ 200k, a ≥ 5% pop over SMA20 in the recent past, RVOL > 1.5
+on the signal bar, and a structure offering ≥ 2R to the prior swing high. The
+strategy **produced zero trades on every universe it was given**, so the verdict is
+FAIL by the trade-count gate (≥ 300) rather than by measured losses. Output:
+`data/validation_cache/phase1b_validation_2026-07-29.json`.
+
+A zero-trade result is worthless without knowing whether it is scarcity or a bug, so
+each run logged a full **gate census** — every evaluable bar attributed to the first
+gate it failed (the gate order is cheapest-first, so this is well-defined):
+
+| Universe | How it was built | Tickers | Bars | Reached structure gate | Trades |
+|---|---|---|---|---|---|
+| CORE quality (original) | today's quality screen, projected back | 240 | 293,361 | **17** | **0** |
+| $2B+ screen | 5,549-name Nasdaq/NYSE listing pool, $2B+ | 407 | — | — | **0** |
+| $300M–$2B small/mid | same pool, small/mid band, price floor $5 | 96 | 111,237 | **25** | **0** |
+
+On the original universe the binding constraint is unambiguous: **RVOL > 1.5 alone
+rejects 86.4% of bars**, and only **17 bars in 5.5 years** survived exclusions +
+volume + RVOL + the core signal to even reach the structure gate. Even deleting the
+structure gate entirely caps the strategy at 17 candidates — **30× below the 300-trade
+minimum**. The verdict therefore does *not* depend on the `MAX_TARGET_ATR = 4.0`
+choice, which is exactly the question a reader should ask of a zero-trade result.
+
+The small/mid universe was built specifically to test the obvious objection — *"quiet
+pullbacks don't happen in mega-caps, try smaller names"* — and it did shift the
+funnel (`avg volume ≥ 200k` becomes the top rejector at 29.8%, RVOL stops dominating)
+without producing a single trade. **The conjunction is the problem, not any one
+threshold**: a bar must simultaneously be quiet enough to be a pause and busy enough
+to clear RVOL 1.5. Those two requirements are close to mutually exclusive, and no
+universe fixes that.
+
+Three things were deliberately *not* done, all of them offered by the data and all
+of them refused: thresholds were not loosened after seeing the funnel (three separate
+opportunities), the structure gate was not deleted "just to see", and no realism pass
+was run — there is nothing to apply costs to. One real bug was found and fixed along
+the way: a universe-path bug that was hiding ~1,000 tickers from production. The one
+finding carried forward was that **GAB and BDJ are closed-end funds, not operating
+companies**, and slipped the exclusion gate because they aren't leveraged/inverse
+ETFs; that was reported rather than patched mid-run, and became the pre-registered
+closed-end-fund blacklist now in `strategies/filters.py`.
+
+⚠️ All P1B runs are labelled **SURVIVOR / CURRENT-FUNDAMENTALS / UPPER-BOUND-ONLY**.
+The no-look-ahead check returned **INCONCLUSIVE** for this strategy — with zero closed
+trades there is nothing to compare. That gap is why H1's harness added
+`assert trades_compared >= 2`, so a look-ahead check can no longer pass vacuously.
+
+Code: `strategies/dip_in_uptrend.py`, `scripts/run_phase1b_validation.py`.
+
+---
+
 ## 🔬 Edge-search protocol — H1 postmortem (NO-EDGE)
 
 **H1 — panic mean reversion in quality large caps.** Buy a liquid name that is still above its SMA200 but has flushed ≥ 2.5 ATR over ten sessions with ≥ 3 of the last 4 closes down; bid a LIMIT 0.5 ATR under the close; exit on the first close above SMA5, a 2 ATR hard stop, or 7 bars. Registered in `edge_search_protocol.md` with no target and no break-even ratchet — mean reversion takes many small wins, and Phase 1's 2R shape was pre-registered out rather than dropped after seeing a result. Run on the original 229-name quality list (SURVIVOR data), 273,654 bars, 2021-08 → 2026-06. **1,509 trades, 63.5% win rate, expectancy +0.028R after 10bps costs, PF 1.110, t = +1.64, and the sign held in both the train and test halves.** That is the first genuinely non-zero, correctly-signed result this project has produced — and it still fails the pre-registered gate, which asked for ≥ +0.10R and PF ≥ 1.2. Three things explain the shortfall and none of them are fixable by tuning: the whole 2022 bear year printed **−0.116R at t = −2.55**, because a strategy with its regime gate registered OFF buys every step of a sustained downtrend; the signal is heavily clustered (19 names can flush on one day, 37% of trades land on days with more than five signals), so under the live 2-position cap **75% of signals are rejected and the 377 trades you could actually take expectancy out at −0.009R while the 1,132 you were capped out of made +0.040R**; and the universe is survivor data, so the true number sits below the measured one by an unknown margin. Per the protocol, H1 closes as **NO-EDGE** (0 < expectancy < +0.10R). Not FAIL — the effect appears to be real, just too small to pay for its own capacity constraint. Nothing is deployed; nothing was tuned.
@@ -475,7 +576,7 @@ Per the ticket's own fallback clause, the bias is now **machine-enforced rather 
 | train (≤ 2025-01-05) | 1076 | 63.6% | +0.43 | −0.69 | **+0.023** | 61.5% | 1.093 | +1.18 |
 | test (> 2025-01-05) | 433 | 63.3% | +0.47 | −0.70 | **+0.039** | 59.9% | 1.152 | +1.20 |
 
-Code: `strategies/panic_reversion.py` (entry), `core/h1_backtest.py` (limit-fill simulator + H1 exit ladder), `tests/test_panic_reversion.py` (54 tests), `scripts/run_h1_validation.py` (the ladder). Phase 1 and Phase 1B entries are untouched. The closed-end-fund blacklist the Phase 1B postmortem asked for now lives in `strategies/filters.py` and is applied by every strategy.
+Code: `strategies/panic_reversion.py` (entry), `core/h1_backtest.py` (limit-fill simulator + H1 exit ladder), `tests/test_panic_reversion.py` (54 tests), `scripts/run_h1_validation.py` (the ladder). Phase 1 and Phase 1B entries are untouched. The closed-end-fund blacklist the Phase 1B postmortem asked for now lives in `strategies/filters.py` and is applied by every **research** strategy. ⚠️ The live scanner (`core/swing_setups.py`) does not share it — production is protected only by whatever `core_universe.json` currently holds.
 
 ---
 
@@ -494,6 +595,183 @@ Code: `strategies/panic_reversion.py` (entry), `core/h1_backtest.py` (limit-fill
 **The by-product worth keeping: a real point-in-time earnings calendar.** H2's rules exclude earnings gaps specifically so it does not silently become H3 (post-earnings drift is a different hypothesis with a different counterparty). Every earlier run in this project disabled the earnings gate for want of a calendar. `scripts/fetch_earnings_dates.py` now builds one from **EDGAR 8-K item 2.02** filings — free, filed on the day, genuinely point-in-time — covering **395/407 tickers (97.1%), 9,913 filings**, with 381 names at full quarterly coverage. It earned its keep immediately: of the 680 bars that passed every other H2 gate, **500 (73.5%) were earnings reactions**. Without the calendar H2 would have run ~680 trades, three-quarters of them PEAD, under the wrong hypothesis' name. Names the calendar cannot cover (10 foreign issuers filing 6-K rather than 8-K) are excluded rather than waved through, because gating some tickers and not others biases the sample by ticker.
 
 Code: `strategies/gap_continuation.py` (entry), `core/h2_backtest.py` (market-entry simulator + SMA10 trail), `core/protocol_gate.py` (the shared H1–H3 gate, lifted out so three hypotheses cannot drift into three definitions of "passed"), `tests/test_gap_continuation.py` (53 tests), `scripts/run_h2_validation.py`, `scripts/fetch_earnings_dates.py`.
+
+---
+
+## 🔬 C-series postmortem — C2 and C3 PASS (the project's first)
+
+**Connors & Alvarez RSI-2 on SPY**, pre-registered in `connors_rsi2_spec.md`. Buy short-term oversold inside a long-term uptrend: SPY > SMA200, then C1 = RSI(2) < 5 exiting above SMA5, C2 = 2-day cumulative RSI(2) < 35 and C3 = < 50, both exiting when RSI(2) > 65. No stop (the book's design), 25-day safety valve, 2bps/side. L0 reproduced the book's published win rates (C1 83.7% vs 83.6%), which validated the harness and nothing else — 1993-2007 is the authors' own development window. The verdict lives in **L2: POST-BOOK (2008-2026), close-fill, costs on**, and it is the first genuinely trustable verdict this project has produced, because SPY is a single continuously-listed ETF: no survivorship bias, no clustering or capacity problem, and a 2bps cost assumption that is actually defensible. **C2 passes every bar of the gate (146 trades, 74.7% win, +0.436%/trade after costs, PF 2.095, t = +3.20). C3 passes every bar (207 trades, 73.0%, +0.336%/trade, PF 1.836, t = +2.98). C1 is MARGINAL on one bar only — 80 POST-BOOK trades against a registered floor of 100 — while being the strongest per trade (+0.528%, PF 2.294).** The edge decayed after publication but did not disappear: C1 went +1.050% -> +0.528% per trade, C2 +0.814% -> +0.436%, C3 +0.660% -> +0.336%, roughly a halving, with win rates down 6-8pp. It is not execution-fragile — at next-open fills for both entry AND exit, C2 and C3 actually *improve* (PF 2.180 and 1.961). The 25-day valve never fired once in 4,672 trades across every run, so the exit rules resolve on their own.
+
+**The thing the gate does not measure, stated plainly:** over 2008-2026 these strategies compound at **2.4-4.1% CAGR against SPY's 11.24%**, because they hold SPY only 5.6-16.5% of the time. The per-trade edge is real and statistically supported; it does not beat buy-and-hold on capital. What it does beat is *risk*: max drawdown 14.0-14.9% (daily mark-to-market) against SPY's 51.9%, so MAR is modestly better (C3 0.28 vs 0.22). This is a cash-deployment strategy, not a replacement for owning the index — and it is only interesting if the idle 84-94% of the time is earning something.
+
+| Run | Window | Fill | Costs | C1 | C2 | C3 |
+|---|---|---|---|---|---|---|
+| L0 | BOOK 1993-2007 | close | off | 49t, 83.7%, +1.050% | 118t, 83.0%, +0.814% | 164t, 81.1%, +0.660% |
+| L1 | POST-BOOK | close | off | 80t, 77.5%, +0.569% | 146t, 74.7%, +0.476% | 207t, 73.4%, +0.376% |
+| **L2** | **POST-BOOK** | **close** | **2bps** | **80t, 77.5%, +0.528%, PF 2.294** | **146t, 74.7%, +0.436%, PF 2.095** | **207t, 73.0%, +0.336%, PF 1.836** |
+| L3 | POST-BOOK | next open | 2bps | 80t, 73.8%, +0.450%, PF 2.004 | 146t, 72.6%, +0.462%, PF 2.180 | 207t, 69.1%, +0.385%, PF 1.961 |
+| L4 | FULL 1993-2026 | close | 2bps | 129t, 79.1%, +0.711% | 264t, 78.4%, +0.587% | 371t, 76.3%, +0.461% |
+
+**Verdicts (L2): C1 MARGINAL** (trade-count floor), **C2 PASS**, **C3 PASS**. Per the spec MARGINAL means "not tradable; do not tune; record and close" — C1 is not rescued by noting it is the best per trade.
+
+**Risk lives in the tail, as it must with no stop.** The worst POST-BOOK trade was 2011-07-27, −10.2% closed with a −15.6% max adverse excursion; COVID cost C3 −7.4% on one trade with a −14.4% MAE. Every stress window was survived (2008-09 was the *best* period, +13.0% for C2), but a strategy with no stop that goes 15% underwater on a single position is one where position sizing is the entire risk control. The 10%-allocation overlay the spec asks for returns 6.5-7.2% over the window at ~1.2% drawdown.
+
+**Honest note on one number.** The gate compares strategy drawdown to buy-and-hold drawdown. As written, `equity_curve_stats` marks the strategy only at trade exits while buy-and-hold is marked daily — an apples-to-oranges comparison that flatters the strategy. Marked daily the strategy's drawdown is 14.0-14.9%, not 11.8-12.2%. The verdict is unchanged either way (both are far under 51.9%), and the registered figure is reported above, but the stricter number is the one to believe.
+
+Code: `strategies/rsi2.py`, `core/c_series_backtest.py`, `tests/test_rsi2.py` (52 tests), `scripts/run_c_series.py`, `scripts/fetch_spy_extended.py`. Universe files untouched — the C-series trades SPY only.
+
+**The C-series registration is now spent.** Per `connors_rsi2_spec.md`, C1/C2/C3 were
+the one registration; any further Connors strategy needs a **new pre-registered
+addendum naming ONE strategy and its gate** before a line of code is written. That
+addendum was written — see below.
+
+---
+
+## 🔬 Addendum 1 postmortem — C2 replicates across 12 ETFs (G1/G2/G3 all pass)
+
+**The question:** is the C2 edge a property of short-term mean reversion in liquid
+index products generally, or a SPY-specific fluke? Registered in
+`c2_etf_basket_addendum.md` as a **replication, not a new strategy** — the C2 rules
+are frozen exactly as validated, and the only thing allowed to differ per instrument
+is the cost model (2bps/side for QQQ/DIA/IWM, 5bps for the nine sector SPDRs). The
+basket, the gates and the tiebreak were all named before a single instrument was run.
+
+**The pipeline was proven before it was trusted.** SPY is excluded from the basket
+but replays through the identical new runner as a control, compared **trade-by-trade
+against the stored trades of the published C2 verdict** — 146/146, **zero mismatches
+across 11 fields per trade**. Look-ahead replay passed on all 13 instruments, none
+vacuously (183–264 trades compared each).
+
+**The result: C2 replicates, and not narrowly.** All **12 of 12 instruments are
+positive after costs** over 2008–2026; pooled, **1,750 trades, 72.7% win,
++0.3295%/trade, PF 1.590**, and the sign holds in both halves of a 70/30 date split
+(train +0.3264%, test +0.3362%). It is not execution-fragile — at next-open fills the
+pooled result *improves* to +0.3625%/trade, PF 1.655. The 25-day valve fired **zero
+times** across all 24 instrument-runs, exactly as on SPY. **G1 SUCCESS, G2 PASS,
+G3 PASS.**
+
+| | Trades | Win% | Avg%/trade | PF | t (naive) | Positive |
+|---|---|---|---|---|---|---|
+| Pooled, close fill | 1,750 | 72.7% | **+0.3295** | 1.590 | +6.44 | **12/12** |
+| Pooled, next open | 1,749 | 70.7% | +0.3625 | 1.655 | +6.97 | 11/12 |
+| Broad (QQQ/DIA/IWM) | 452 | — | +0.3876 | 1.741 | +4.16 | 3/3 |
+| Sectors (9 SPDRs) | 1,298 | — | +0.3092 | 1.542 | +5.08 | 9/9 |
+
+**Four things temper that, all measured rather than asserted:**
+
+**1. The pooled t-stat is inflated, and here is by how much.** The addendum required
+this to be weighed honestly rather than counted as twelve confirmations. Naive pooled
+t = **+6.44**; clustering trades by entry day (same-day sector signals are one market
+event) gives **t = +3.81**; clustering by calendar month gives **+3.83**. The edge
+survives the correction comfortably — but the honest figure is ~+3.8, not +6.4. Mean
+pairwise signal-date Jaccard is **0.109** (QQQ↔XLK highest at 0.483, XLE↔XLU lowest
+at 0.023), and the largest single-day cluster was **10 of 12 instruments** on
+2010-01-22.
+
+**2. Twelve are positive; only seven are individually significant.** Own t ≥ 2.0:
+QQQ, DIA, XLI, XLK, XLP, XLV, XLY. The other five — IWM (1.48), XLE (0.91), XLB
+(0.71), XLF (0.71), XLU (0.47) — are positive but not distinguishable from noise on
+their own. G1 asked for sign, not significance, and passes as written; the
+distinction belongs next to it.
+
+**3. The basket beats buy-and-hold on MAR — but loses to SPY-only C2.** G2's
+registered bar is P-capped MAR ≥ SPY buy-and-hold MAR, and it clears: **0.2321 vs
+0.2167**. Against the addendum's *other* named benchmark, the registered SPY-only C2
+implementation, it does not: **0.2321 vs 0.2396**, daily-marked and sizing-invariant.
+So the basket buys **6.5× the activity** (51.5 trades/yr vs 7.9) at a slightly
+*worse* risk-adjusted return than the single-instrument reference. G2 passes; the
+thing G2 was written to detect — "activity without quality" — is visible anyway.
+
+**4. The capacity problem that killed H1 is present, and the registered tiebreak
+makes it worse.** Under the 3-position cap, **45.3% of signals are refused**, and the
+trades actually taken average **+0.2247% against +0.4559% for the ones refused** —
+the cap systematically declines the better signals. Unlike H1 this stays positive, so
+it is a haircut rather than a kill. But the registered priority rule (most oversold
+first) is the *cause*: against 25 random-take seeds it sits at the **16th percentile**
+on taken expectancy (random mean +0.2383%) and the 32nd on MAR. Picking the most
+oversold name first is worse than picking at random. Per the addendum the rule stands
+for this run and is reported, not changed.
+
+| Sim | Sizing | CAGR | MaxDD | MAR | Trades/yr | Refused |
+|---|---|---|---|---|---|---|
+| P-uncapped | equal-open | +5.36% | 44.29% | 0.121 | 94.2 | 0% |
+| **P-capped (registered)** | **1/3 slots** | **+3.73%** | **16.08%** | **0.232** | **51.5** | **45.3%** |
+| P-capped (diagnostic) | equal-open | +6.65% | 19.35% | 0.344 | 51.5 | 45.3% |
+| SPY-only C2 (reference) | — | +3.37% | 14.06% | 0.240 | 7.9 | — |
+| SPY buy-and-hold | 100% | +11.24% | 51.87% | 0.217 | — | — |
+
+**Risk still lives in the tail, and 2020 is where it shows.** Pooled crisis windows:
+2008-09 was the *best* period (+0.759%/trade, PF 2.434), 2022 mildly negative
+(−0.194%), and **COVID was carnage — 12 trades at −5.58%/trade, PF 0.038**, including
+**XLF −32.8% closed with a −40.8% maximum adverse excursion**. A no-stop strategy that
+goes 41% underwater on one position is one where sizing is the entire risk control,
+which is exactly why the 1/3-slot ruling matters. The cap did its job: the P-capped
+portfolio lost only −4.5% over Feb–Apr 2020. Its worst drawdown day was not COVID at
+all but **2011-08-08 (−16.08%)**, when the debt-ceiling selloff hit several correlated
+sectors at once. 5 of 19 years are negative (2008, 2011, 2018, 2020, 2022).
+
+**Verdict: the SPY C2 result was not a fluke.** The same rules, unchanged, produce a
+positive after-cost edge on twelve other liquid index products, out of sample, with
+the sign holding in both halves. What replication does *not* buy is a better
+business: the basket still compounds at ~3.7% against SPY's 11.2%, still sits in cash
+half the time, and is still slightly worse risk-adjusted than just running C2 on SPY.
+Per the addendum, **SPY-only remains the reference implementation.** Nothing is
+deployed; no threshold was moved.
+
+Code: `core/basket_backtest.py` (runner + portfolio sim + gates),
+`scripts/fetch_etf_basket.py`, `scripts/run_etf_basket.py`, `tests/test_etf_basket.py`
+(42 tests). Data: `data/validation_cache/etf_basket.parquet`. Universe files untouched.
+
+---
+
+## 🕓 Still queued — H3 and H4
+
+Both are registered in `edge_search_protocol.md` with their gates already written.
+Neither has been implemented. Listing them here so the queue is visible and so the
+gates cannot be quietly rewritten later.
+
+### H3 — Post-Earnings Announcement Drift (PEAD)
+
+**Status: viable, not started.** H3 was registered as *conditional on data* — it needs
+historical earnings dates for most of the 407-name universe, and the protocol says
+report `DATA-UNAVAILABLE` and close it unimplemented if they can't be had. **That
+precondition is now satisfied.** H2's by-product, `data/validation_cache/earnings_dates.parquet`,
+covers **395/407 tickers (97.1%) from EDGAR 8-K item 2.02** — free, filed same-day,
+genuinely point-in-time. So H3 runs when authorised.
+
+Registered rules (unchanged, not to be edited): earnings reported and the next
+regular session closes ≥ +5% vs the pre-announcement close, on RVOL ≥ 2.0, closing in
+the top third of its range; buy at the open **2 trading days after** the reaction day;
+close > SMA200 and regime gate ON; stop at entry − 1.5 × ATR(14), break-even ratchet
+at +1R, time exit at 15 bars. Gate: the default gate with the **trade-count floor
+lowered to 150** (events are rarer — registered in advance, not after seeing a count).
+
+⚠️ H3 inherits the same survivorship problem as H1/H2: the 407 names are today's
+screen projected backward, so any H3 result is an **upper bound**, capped at
+MARGINAL by the protocol. Note also that H2 already measured how large this event
+population is — **500 of 680 qualifying bars (73.5%) were earnings reactions** — so
+sample size is not expected to be the binding constraint.
+
+### H4 — Regime trend-following on index ETFs
+
+**Status: not started.** SPY and QQQ only, 50/50, evaluated on the last trading day of
+each week and acted on at the next open. IN when close > SMA200 and SMA200 is rising
+vs 20 days ago; OUT to cash when close < SMA200 for **5 consecutive** sessions (the
+anti-whipsaw constant, registered and final). No stops, no targets — it is a switch,
+not a trade.
+
+H4 is the only hypothesis with a **different gate by design**, because its claim is
+not excess return but drawdown avoidance: max drawdown ≤ ⅔ of buy-and-hold's, AND
+CAGR ≥ (buy-and-hold CAGR − 2pp), AND MAR strictly greater than buy-and-hold's —
+all three, over the full window and in both splits. It is also the only hypothesis
+that can reach an unqualified **PASS** on present data, since index ETFs have no
+survivorship issue. Even so, 5.5 years contains essentially one bear cycle (2022), so
+a pass must be labelled **ONE-CYCLE-SAMPLE**.
+
+Note the overlap worth watching: H4 and the C-series are both "own SPY only when it's
+healthy" rules on different timescales, and the C-series already spends 84–94% of its
+time in cash. If H4 passes, the honest question is whether the two compose or merely
+restate each other.
 
 ---
 
@@ -530,10 +808,21 @@ DipRadar/
 ├── bot_commands.py                  # Telegram dispatcher
 ├── state.py                         # JSON persistence
 ├── config.py                        # Central config
+├── strategies/                      # Pre-registered entry hypotheses (research)
+│   ├── trend_pullback.py           # P1  — NO EDGE
+│   ├── dip_in_uptrend.py           # P1B — FAIL (zero trades)
+│   ├── panic_reversion.py          # H1  — NO-EDGE
+│   ├── gap_continuation.py         # H2  — FAIL
+│   ├── rsi2.py                     # C1/C2/C3 — MARGINAL / PASS / PASS
+│   └── filters.py                  # Shared exclusions, CEF blacklist, EarningsCalendar
 ├── core/
 │   ├── swing_setups.py             # Swing setup engine (DEFAULT scorer)
 │   ├── swing_exits.py              # Exit state machine (stop/breakeven/trail/time)
 │   ├── swing_backtest.py           # Replay engine + pre-registered gate
+│   ├── protocol_gate.py            # THE shared H1-H3 gate + train/test split
+│   ├── h1_backtest.py              # Limit-fill simulator (H1)
+│   ├── h2_backtest.py              # Market-entry simulator + SMA10 trail (H2)
+│   ├── c_series_backtest.py        # %-per-trade simulator, no stop (C-series)
 │   ├── honest_watchlist.py         # Long-term watchlist (previous default)
 │   ├── scoring_dispatch.py          # One env switch, 4 modes
 │   ├── dislocation_score.py         # Experimental rule-based scorer (F.5 failed)
@@ -562,7 +851,22 @@ DipRadar/
 │   ├── http_timeout.py              # Monkey-patch yfinance to add timeouts
 │   └── ...
 ├── scripts/                         # Build/calibrate/validate one-shot scripts
-└── tests/                           # pytest suite (55 tests post-watchlist ship)
+│   ├── run_swing_validation.py     # P1 ladder
+│   ├── run_phase1b_validation.py   # P1B ladder + zero-trade census
+│   ├── run_h1_validation.py        # H1 ladder
+│   ├── run_h2_validation.py        # H2 ladder
+│   ├── run_c_series.py             # C-series ladder L0-L4
+│   ├── fetch_earnings_dates.py     # EDGAR 8-K 2.02 -> PIT earnings calendar
+│   └── fetch_spy_extended.py       # SPY 1993-2026 daily cache (C-series)
+├── core_universe.json               # Live universe (+ .bak / .bak2 / .p1b_final)
+└── tests/                           # pytest suite (377 tests across all suites)
 ```
+
+**Pre-registration workflow.** Every hypothesis above was written into a spec
+document — `Phase1B_Reversal_Strategy_Spec.md`, `edge_search_protocol.md`,
+`connors_rsi2_spec.md` — with its **gate thresholds fixed before the first run**, and
+each spec forbids editing itself once results exist. That is why the ledger contains
+five failures: the pass mark could not be moved to meet the result. See
+[HOW_IT_WORKS.md](HOW_IT_WORKS.md) for the plain-language version.
 
 Module docstrings carry the technical detail per file.

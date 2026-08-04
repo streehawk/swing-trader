@@ -1,0 +1,351 @@
+{
+  "run_at": "2026-07-29T17:41:06+00:00",
+  "elapsed_sec": 771.7,
+  "gate": {
+    "min_expectancy_r": 0.1,
+    "min_trades": 300,
+    "min_profit_factor": 1.2,
+    "must_beat_b0": true
+  },
+  "verdict": "FAIL",
+  "checks": [
+    {
+      "name": "expectancy >= +0.10R",
+      "pass": false,
+      "detail": "+0.000R (need >= +0.10R)"
+    },
+    {
+      "name": "#trades >= 300",
+      "pass": false,
+      "detail": "0 (need >= 300)"
+    },
+    {
+      "name": "profit factor >= 1.2",
+      "pass": false,
+      "detail": "0.0 (need >= 1.2)"
+    },
+    {
+      "name": "beats B0 on expectancy",
+      "pass": true,
+      "detail": "B4 +0.000R vs B0 -0.009R"
+    }
+  ],
+  "universe": {
+    "universe_type": "SURVIVOR",
+    "n_tickers": 241,
+    "n_delisted": 0,
+    "delisting_rate": 0.0,
+    "dataset_start": "2020-10-01",
+    "dataset_end": "2026-06-26",
+    "detection": "empirical: tickers whose series ends >30d before the dataset",
+    "warning": "SURVIVOR universe: zero delistings detected. Every result is an UPPER BOUND, not a measured edge (P1-7 item 1)."
+  },
+  "held_constant": {
+    "risk_pct": 0.0075,
+    "max_concurrent": 2,
+    "time_stop_bars": 15,
+    "exits": {
+      "SWING_TRAIL_ENABLED": "1",
+      "SWING_PARTIAL_FRACTION": "0.5"
+    },
+    "earnings_gate": "OFF in backtest (no PIT calendar) for BOTH strategies"
+  },
+  "no_lookahead": {
+    "trend_pullback": {
+      "passed": true,
+      "tickers_checked": [
+        "A",
+        "AAPL",
+        "ABBV"
+      ],
+      "trades_compared": 19,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": null
+    },
+    "dip_in_uptrend": {
+      "passed": true,
+      "tickers_checked": [
+        "A",
+        "AAPL",
+        "ABBV"
+      ],
+      "trades_compared": 0,
+      "mismatches": [],
+      "method": "appended 40 bars of a fabricated 3x rally; every trade closing before the original data ended must be unchanged",
+      "note": "INCONCLUSIVE \u2014 no closed trades to compare"
+    }
+  },
+  "best_p1b_config": "B1",
+  "runs": [
+    {
+      "label": "B0",
+      "strategy": "trend_pullback",
+      "regime": "on",
+      "costs": "10bps",
+      "stats": {
+        "n_trades": 666,
+        "expectancy_r": -0.0091,
+        "breakeven_win_rate": 0.3657,
+        "median_r": -0.3364,
+        "total_r": -6.07,
+        "win_rate": 0.3619,
+        "avg_win_r": 1.4902,
+        "avg_loss_r": -0.8593,
+        "profit_factor": 0.983,
+        "max_drawdown_r": 51.73,
+        "std_r": 1.3451,
+        "t_stat": -0.175,
+        "avg_bars_held": 6.69,
+        "pct_partial": 0.2237,
+        "exit_breakdown": {
+          "BREAKEVEN_STOP": 12,
+          "END_OF_DATA": 5,
+          "STOP": 323,
+          "TIME_STOP": 39,
+          "TIME_STOP_AFTER_PARTIAL": 20,
+          "TRAIL_STOP": 267
+        },
+        "setup_breakdown": {
+          "PULLBACK": 666
+        }
+      },
+      "portfolio": {
+        "n_taken": 181,
+        "n_rejected": 485,
+        "rejection_rate": 0.7282,
+        "starting_equity": 10000.0,
+        "final_equity": 9365.96,
+        "total_return_pct": -6.34,
+        "max_drawdown_pct": 12.49,
+        "risk_pct": 0.0075,
+        "max_concurrent": 2
+      },
+      "by_year": {
+        "2021": {
+          "n_trades": 79,
+          "expectancy_r": -0.0633,
+          "breakeven_win_rate": 0.3832,
+          "median_r": -0.4461,
+          "total_r": -5.0,
+          "win_rate": 0.3544,
+          "avg_win_r": 1.3547,
+          "avg_loss_r": -0.8417,
+          "profit_factor": 0.884,
+          "max_drawdown_r": 16.78,
+          "std_r": 1.2827,
+          "t_stat": -0.438,
+          "avg_bars_held": 7.1,
+          "pct_partial": 0.1772,
+          "exit_breakdown": {
+            "BREAKEVEN_STOP": 2,
+            "STOP": 38,
+            "TIME_STOP": 5,
+            "TIME_STOP_AFTER_PARTIAL": 2,
+            "TRAIL_STOP": 32
+          },
+          "setup_breakdown": {
+            "PULLBACK": 79
+          }
+        },
+        "2022": {
+          "n_trades": 17,
+          "expectancy_r": -0.1979,
+          "breakeven_win_rate": 0.3106,
+          "median_r": -1.0316,
+          "total_r": -3.36,
+          "win_rate": 0.2353,
+          "avg_win_r": 1.8128,
+          "avg_loss_r": -0.8166,
+          "profit_factor": 0.683,
+          "max_drawdown_r": 6.28,
+          "std_r": 1.216,
+          "t_stat": -0.671,
+          "avg_bars_held": 6.76,
+          "pct_partial": 0.2353,
+          "exit_breakdown": {
+            "STOP": 10,
+            "TRAIL_STOP": 7
+          },
+          "setup_breakdown": {
+            "PULLBACK": 17
+          }
+        },
+        "2023": {
+          "n_trades": 144,
+          "expectancy_r": -0.0819,
+          "breakeven_win_rate": 0.3746,
+          "median_r": -1.0219,
+          "total_r": -11.8,
+          "win_rate": 0.3403,
+          "avg_win_r": 1.4942,
+          "avg_loss_r": -0.8949,
+          "profit_factor": 0.861,
+          "max_drawdown_r": 30.77,
+          "std_r": 1.3182,
+          "t_stat": -0.746,
+          "avg_bars_held": 6.5,
+          "pct_partial": 0.2222,
+          "exit_breakdown": {
+            "STOP": 77,
+            "TIME_STOP": 8,
+            "TIME_STOP_AFTER_PARTIAL": 8,
+            "TRAIL_STOP": 51
+          },
+          "setup_breakdown": {
+            "PULLBACK": 144
+          }
+        },
+        "2024": {
+          "n_trades": 249,
+          "expectancy_r": 0.1542,
+          "breakeven_win_rate": 0.3505,
+          "median_r": -0.0505,
+          "total_r": 38.39,
+          "win_rate": 0.4137,
+          "avg_win_r": 1.5849,
+          "avg_loss_r": -0.8552,
+          "profit_factor": 1.307,
+          "max_drawdown_r": 27.16,
+          "std_r": 1.4448,
+          "t_stat": 1.684,
+          "avg_bars_held": 7.1,
+          "pct_partial": 0.2771,
+          "exit_breakdown": {
+            "BREAKEVEN_STOP": 7,
+            "STOP": 111,
+            "TIME_STOP": 18,
+            "TIME_STOP_AFTER_PARTIAL": 9,
+            "TRAIL_STOP": 104
+          },
+          "setup_breakdown": {
+            "PULLBACK": 249
+          }
+        },
+        "2025": {
+          "n_trades": 116,
+          "expectancy_r": -0.2795,
+          "breakeven_win_rate": 0.4132,
+          "median_r": -1.0128,
+          "total_r": -32.42,
+          "win_rate": 0.2759,
+          "avg_win_r": 1.1943,
+          "avg_loss_r": -0.8409,
+          "profit_factor": 0.541,
+          "max_drawdown_r": 41.31,
+          "std_r": 1.15,
+          "t_stat": -2.618,
+          "avg_bars_held": 6.34,
+          "pct_partial": 0.1121,
+          "exit_breakdown": {
+            "BREAKEVEN_STOP": 3,
+            "STOP": 59,
+            "TIME_STOP": 8,
+            "TIME_STOP_AFTER_PARTIAL": 1,
+            "TRAIL_STOP": 45
+          },
+          "setup_breakdown": {
+            "PULLBACK": 116
+          }
+        },
+        "2026": {
+          "n_trades": 61,
+          "expectancy_r": 0.1332,
+          "breakeven_win_rate": 0.3552,
+          "median_r": -0.3266,
+          "total_r": 8.12,
+          "win_rate": 0.4098,
+          "avg_win_r": 1.5715,
+          "avg_loss_r": -0.8657,
+          "profit_factor": 1.261,
+          "max_drawdown_r": 13.68,
+          "std_r": 1.3842,
+          "t_stat": 0.751,
+          "avg_bars_held": 5.57,
+          "pct_partial": 0.2787,
+          "exit_breakdown": {
+            "END_OF_DATA": 5,
+            "STOP": 28,
+            "TRAIL_STOP": 28
+          },
+          "setup_breakdown": {
+            "PULLBACK": 61
+          }
+        }
+      }
+    },
+    {
+      "label": "B1",
+      "strategy": "dip_in_uptrend",
+      "regime": "off",
+      "costs": "none",
+      "stats": {
+        "n_trades": 0
+      },
+      "portfolio": {
+        "n_taken": 0,
+        "n_rejected": 0
+      },
+      "by_year": {}
+    },
+    {
+      "label": "B2",
+      "strategy": "dip_in_uptrend",
+      "regime": "on",
+      "costs": "none",
+      "stats": {
+        "n_trades": 0
+      },
+      "portfolio": {
+        "n_taken": 0,
+        "n_rejected": 0
+      },
+      "by_year": {}
+    },
+    {
+      "label": "B3",
+      "strategy": "dip_in_uptrend",
+      "regime": "off",
+      "costs": "none",
+      "stats": {
+        "n_trades": 0
+      },
+      "portfolio": {
+        "n_taken": 0,
+        "n_rejected": 0
+      },
+      "by_year": {}
+    },
+    {
+      "label": "B4",
+      "strategy": "dip_in_uptrend",
+      "regime": "off",
+      "costs": "15bps",
+      "stats": {
+        "n_trades": 0
+      },
+      "portfolio": {
+        "n_taken": 0,
+        "n_rejected": 0
+      },
+      "by_year": {}
+    }
+  ],
+  "zero_trade_census": {
+    "note": "Phase 1B produced ZERO trades. This census establishes why: it is signal scarcity, not measured losses. Gate order is cheapest-first, so each bar is attributed to the FIRST gate it failed.",
+    "tickers": 240,
+    "evaluable_bars": 293361,
+    "core_signal_P1B1_alone": 254,
+    "core_signal_rate": 0.000866,
+    "passed_all_gates": 0,
+    "rejected_by": {
+      "rvol_gt_1.5": 253462,
+      "sma20_pop_5pct": 25852,
+      "avg_volume_200k": 8043,
+      "close_below_sma50": 5176,
+      "price_ge_10": 811,
+      "structure_2R": 17
+    },
+    "binding_constraint": "Only 17 bars in 5.5 years survived exclusions + volume + RVOL + the core signal to reach the structure gate. Even with the structure gate removed entirely, the ceiling is 17 candidates \u2014 30x below the 300-trade minimum. The verdict therefore does NOT depend on the MAX_TARGET_ATR=4.0 choice."
+  }
+}
