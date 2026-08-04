@@ -74,3 +74,10 @@ pyarrow.libs/
 pyarrow-*.dist-info/
 *.dist-info/
 *.libs/
+
+# Live trading records — personal financial data, never committed.
+# `positions.json` holds real account equity and open positions;
+# `trade_log.csv` doubles as the tax record (live_trading_protocol.md §8).
+# Recreate the scaffolding with:
+#   python scripts/c2_live_report.py --init-positions
+data/live/
