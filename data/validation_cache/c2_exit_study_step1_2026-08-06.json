@@ -1,0 +1,183 @@
+{
+  "step": 1,
+  "run_date": "2026-08-06 23:26:16.124076+00:00",
+  "instruments": [
+    "SPY",
+    "QQQ",
+    "DIA",
+    "IWM",
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY"
+  ],
+  "post_book_start": "2008-01-01",
+  "exits": {
+    "E0": {
+      "rule": "RSI(2) > 65",
+      "status": "INCUMBENT (validated, live)",
+      "family": "RSI",
+      "book_rank": 4
+    },
+    "E1": {
+      "rule": "RSI(2) > 70",
+      "status": "challenger",
+      "family": "RSI",
+      "book_rank": 2
+    },
+    "E2": {
+      "rule": "RSI(2) > 75",
+      "status": "challenger",
+      "family": "RSI",
+      "book_rank": 1
+    },
+    "E3": {
+      "rule": "close > SMA5",
+      "status": "challenger",
+      "family": "MA",
+      "book_rank": 5
+    },
+    "E4": {
+      "rule": "close > SMA10",
+      "status": "challenger",
+      "family": "MA",
+      "book_rank": 3
+    }
+  },
+  "control": {
+    "passed": true,
+    "instrument_runs_compared": 25,
+    "fields_per_trade": [
+      "entry_date",
+      "exit_date",
+      "entry_index",
+      "exit_index",
+      "bars_held",
+      "entry_price",
+      "exit_price",
+      "pct_return",
+      "mae_pct",
+      "mfe_pct",
+      "exit_reason"
+    ],
+    "mismatches": [],
+    "n_mismatches": 0
+  },
+  "entry_census": {
+    "SPY": {
+      "raw_signals": 291,
+      "e0_taken": 146,
+      "skipped_while_held": 145
+    },
+    "QQQ": {
+      "raw_signals": 328,
+      "e0_taken": 160,
+      "skipped_while_held": 168
+    },
+    "DIA": {
+      "raw_signals": 326,
+      "e0_taken": 152,
+      "skipped_while_held": 174
+    },
+    "IWM": {
+      "raw_signals": 297,
+      "e0_taken": 140,
+      "skipped_while_held": 157
+    },
+    "XLB": {
+      "raw_signals": 307,
+      "e0_taken": 141,
+      "skipped_while_held": 166
+    },
+    "XLE": {
+      "raw_signals": 279,
+      "e0_taken": 130,
+      "skipped_while_held": 149
+    },
+    "XLF": {
+      "raw_signals": 263,
+      "e0_taken": 129,
+      "skipped_while_held": 134
+    },
+    "XLI": {
+      "raw_signals": 330,
+      "e0_taken": 155,
+      "skipped_while_held": 175
+    },
+    "XLK": {
+      "raw_signals": 314,
+      "e0_taken": 144,
+      "skipped_while_held": 170
+    },
+    "XLP": {
+      "raw_signals": 336,
+      "e0_taken": 159,
+      "skipped_while_held": 177
+    },
+    "XLU": {
+      "raw_signals": 327,
+      "e0_taken": 138,
+      "skipped_while_held": 189
+    },
+    "XLV": {
+      "raw_signals": 307,
+      "e0_taken": 142,
+      "skipped_while_held": 165
+    },
+    "XLY": {
+      "raw_signals": 314,
+      "e0_taken": 160,
+      "skipped_while_held": 154
+    }
+  },
+  "totals": {
+    "raw_signals": 4019,
+    "e0_taken": 1896
+  },
+  "attribution_premise": {
+    "identical_entries": false,
+    "per_exit": {
+      "E0": {
+        "taken": 1896,
+        "shared_with_e0": 1896,
+        "only_e0": 0,
+        "only_this": 0,
+        "instruments_differing": 0
+      },
+      "E1": {
+        "taken": 1849,
+        "shared_with_e0": 1849,
+        "only_e0": 47,
+        "only_this": 0,
+        "instruments_differing": 13
+      },
+      "E2": {
+        "taken": 1801,
+        "shared_with_e0": 1801,
+        "only_e0": 95,
+        "only_this": 0,
+        "instruments_differing": 13
+      },
+      "E3": {
+        "taken": 1948,
+        "shared_with_e0": 1896,
+        "only_e0": 0,
+        "only_this": 52,
+        "instruments_differing": 13
+      },
+      "E4": {
+        "taken": 1788,
+        "shared_with_e0": 1782,
+        "only_e0": 114,
+        "only_this": 6,
+        "instruments_differing": 13
+      }
+    }
+  },
+  "verdict": "READY FOR STEP 2"
+}

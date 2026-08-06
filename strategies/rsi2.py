@@ -41,6 +41,7 @@ C2_CUM_ENTRY    = 35.0     # Y = 35, tight
 C3_CUM_ENTRY    = 50.0     # Y = 50, loose
 CUM_RSI_EXIT    = 65.0     # C2/C3 exit when RSI(2) closes above 65
 TIME_VALVE_BARS = 25       # registered safety valve
+EXIT_SMA_10     = 10       # Addendum 2 only (E4). Unused by C1/C2/C3.
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -165,6 +166,12 @@ class Indicators:
     cum_rsi: np.ndarray
     sma5:    np.ndarray
     sma200:  np.ndarray
+    # ADDED for Addendum 2 (exit study) — E4 exits on close > SMA10 and
+    # `replay_variant` gives an exit function no way to precompute its own
+    # series. Deliberately kept OUT of `ready()`: nothing that existed
+    # before reads this field, so no prior result can move. The E0 control
+    # is what proves that claim rather than this comment.
+    sma10:   Optional[np.ndarray] = None
 
     @classmethod
     def build(cls, closes: Sequence[float]) -> "Indicators":
@@ -175,10 +182,17 @@ class Indicators:
             cum_rsi=cumulative_rsi_series(c, RSI_PERIOD, CUM_RSI_DAYS),
             sma5=sma_series(c, C1_EXIT_SMA),
             sma200=sma_series(c, TREND_SMA),
+            sma10=sma_series(c, EXIT_SMA_10),
         )
 
     def ready(self, i: int) -> bool:
-        """Is every series defined at bar i? Warm-up guard, fails closed."""
+        """Is every series defined at bar i? Warm-up guard, fails closed.
+
+        `sma10` is intentionally absent — see the field comment. It is
+        shorter than every window already checked, so it is defined
+        wherever they are; including it could only change behaviour by
+        accident, never on purpose.
+        """
         return bool(
             0 <= i < len(self.closes)
             and np.isfinite(self.rsi2[i]) and np.isfinite(self.cum_rsi[i])
