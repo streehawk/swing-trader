@@ -1,0 +1,18 @@
+#!/bin/sh
+# c2 — the C2-live daily report. Analysis only; places no orders.
+#
+#   ./c2               tonight's report (after the 4pm ET close)
+#   ./c2 --reconcile   next morning, after you record your fills
+#   ./c2 --review      the 3-month K3 review
+#
+# Exists so the daily command is short enough to actually run every day.
+# Uses the project venv so it cannot break when a system Python changes.
+cd "$(dirname "$0")" || exit 1
+
+if [ ! -x .venv/bin/python ]; then
+    echo "No .venv found. Create it once with:"
+    echo "  python3 -m venv .venv && .venv/bin/python -m pip install pandas numpy yfinance pyarrow"
+    exit 1
+fi
+
+exec .venv/bin/python scripts/c2_live_report.py "$@"
