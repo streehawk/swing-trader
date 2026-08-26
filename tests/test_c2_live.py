@@ -405,6 +405,70 @@ class TestReportSafety:
         assert r["nothing_to_do"] is False
         assert "OLD DATA" in render_report(r)
 
+    def test_provisional_bar_is_dropped_while_the_market_is_open(self):
+        # THE 2026-08-26 INCIDENT. At 15:02 ET yfinance served a row for the
+        # still-trading session. Its "close" was just the last trade, and
+        # RSI(2) computed on it read 70.6 (EXIT) against 46.9 on the last
+        # completed bar — a manufactured exit on two live positions.
+        from datetime import datetime
+        from core.c2_live import ET, drop_provisional
+        bars = bars_from(list(100 * (1.0015 ** np.arange(300))))
+        # Pretend the newest bar is today and it is 15:02 ET.
+        idx = list(bars.index[:-1]) + [pd.Timestamp("2026-08-26")]
+        bars.index = pd.DatetimeIndex(idx)
+        mid_session = datetime(2026, 8, 26, 15, 2, tzinfo=ET)
+        out, dropped = drop_provisional(bars, mid_session)
+        assert dropped is True
+        assert len(out) == len(bars) - 1
+
+    def test_completed_session_is_kept_after_the_close(self):
+        from datetime import datetime
+        from core.c2_live import ET, drop_provisional
+        bars = bars_from(list(100 * (1.0015 ** np.arange(300))))
+        idx = list(bars.index[:-1]) + [pd.Timestamp("2026-08-26")]
+        bars.index = pd.DatetimeIndex(idx)
+        after_close = datetime(2026, 8, 26, 17, 30, tzinfo=ET)
+        out, dropped = drop_provisional(bars, after_close)
+        assert dropped is False
+        assert len(out) == len(bars)
+
+    def test_settle_buffer_holds_just_after_the_bell(self):
+        # 16:00-16:10 ET: the bell has rung but the data has not settled.
+        from datetime import datetime
+        from core.c2_live import ET, provisional_bar_date
+        assert provisional_bar_date(datetime(2026, 8, 26, 16, 5, tzinfo=ET)) is not None
+        assert provisional_bar_date(datetime(2026, 8, 26, 16, 11, tzinfo=ET)) is None
+
+    def test_weekend_has_no_provisional_session(self):
+        from datetime import datetime
+        from core.c2_live import ET, provisional_bar_date
+        # 2026-08-29 is a Saturday.
+        assert provisional_bar_date(datetime(2026, 8, 29, 12, 0, tzinfo=ET)) is None
+
+    def test_yesterdays_bar_is_never_provisional(self):
+        from datetime import datetime
+        from core.c2_live import ET, drop_provisional
+        bars = bars_from(list(100 * (1.0015 ** np.arange(300))))
+        idx = list(bars.index[:-1]) + [pd.Timestamp("2026-08-25")]
+        bars.index = pd.DatetimeIndex(idx)
+        _, dropped = drop_provisional(bars, datetime(2026, 8, 26, 15, 2, tzinfo=ET))
+        assert dropped is False
+
+    def test_report_warns_when_it_dropped_a_provisional_bar(self):
+        from datetime import datetime
+        from core.c2_live import ET
+        bars = {}
+        for t in LIVE_INSTRUMENTS:
+            b = bars_from(list(100 * (1.0015 ** np.arange(300))))
+            b.index = pd.DatetimeIndex(list(b.index[:-1]) +
+                                       [pd.Timestamp("2026-08-26")])
+            bars[t] = b
+        r = build_report(bars, flat_positions(), today="2026-08-26",
+                         now=datetime(2026, 8, 26, 15, 2, tzinfo=ET))
+        assert len(r["provisional_bars_dropped"]) == 13
+        assert r["market_still_open"] is True
+        assert "still open" in render_report(r)
+
     def test_report_never_mentions_placing_orders_itself(self):
         bars = {t: bars_from(list(100 * (1.0015 ** np.arange(300))))
                 for t in LIVE_INSTRUMENTS}
@@ -435,6 +499,45 @@ class TestPositionsFile:
                                            "signal_date": "2026-08-03"}]}))
         with pytest.raises(ValueError, match="missing"):
             load_positions(p)
+
+    def test_empty_pending_row_raises(self, tmp_path):
+        # Real incident 2026-08-26: an empty `{}` left in `pending` after
+        # deleting a filled order counted as a slot, taking the book to
+        # 4/3 used and 0 free. It would have suppressed the next signal
+        # while looking like an ordinary quiet market.
+        p = tmp_path / "positions.json"
+        p.write_text(json.dumps({"open": [], "pending": [{}]}))
+        with pytest.raises(ValueError, match="no ticker"):
+            load_positions(p)
+
+    def test_pending_row_with_blank_ticker_raises(self, tmp_path):
+        p = tmp_path / "positions.json"
+        p.write_text(json.dumps({"open": [],
+                                 "pending": [{"ticker": "  ", "side": "entry"}]}))
+        with pytest.raises(ValueError, match="no ticker"):
+            load_positions(p)
+
+    def test_valid_pending_row_still_loads(self, tmp_path):
+        p = tmp_path / "positions.json"
+        p.write_text(json.dumps({"open": [],
+                                 "pending": [{"ticker": "XLE", "side": "entry"}]}))
+        assert load_positions(p).slots_used == 1
+
+    def test_underscore_doc_keys_are_ignored(self, tmp_path):
+        # The self-documenting template puts _HOWTO / _EXAMPLE_* keys in the
+        # file. They must never be parsed as positions.
+        p = tmp_path / "positions.json"
+        p.write_text(json.dumps({
+            "_HOWTO": ["how to use this file"],
+            "_EXAMPLE_open_row": {"ticker": "XLV", "signal_date": "2026-09-14",
+                                  "entry_date": "2026-09-15",
+                                  "entry_price": 163.55, "shares": 6.1},
+            "_EXAMPLE_pending_row": {"ticker": "XLV", "side": "entry"},
+            "open": [], "pending": [],
+        }))
+        pf = load_positions(p)
+        assert pf.slots_used == 0
+        assert pf.held_tickers == set()
 
     def test_pending_and_open_both_consume_slots(self):
         pf = PositionsFile(open=[Position("XLK", "a", "b", 1.0, 1.0)],

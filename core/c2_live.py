@@ -39,8 +39,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, asdict, field
+from datetime import datetime, time as dtime, timedelta
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -205,6 +207,19 @@ def load_positions(path) -> PositionsFile:
     pending = [r for r in raw.get("pending", [])
                if not str(r.get("note", "")).startswith("example row")]
 
+    # A pending row with no ticker is a hand-editing artefact — most often
+    # an empty `{}` left behind after deleting a filled order. It is not
+    # harmless: `slots_used` counts it, so it silently occupies one of the
+    # three slots and suppresses a real signal. Fails loud, like an
+    # incomplete open position does, because the quiet version of this bug
+    # looks exactly like an ordinary quiet market.
+    for k, r in enumerate(pending):
+        if not str(r.get("ticker", "")).strip():
+            raise ValueError(
+                f"pending[{k}] has no ticker: {r!r} — delete the row if the "
+                f"order is gone, or fill in the ticker. An empty row still "
+                f"holds a slot and would hide a real signal.")
+
     return PositionsFile(
         account_equity=float(raw.get("account_equity", 3000.0)),
         slot_dollars=float(raw.get("slot_dollars", DEFAULT_SLOT_DOLLARS)),
@@ -235,6 +250,56 @@ class InstrumentState:
     exit_signal:  bool
     bars:        int
     bars_dropped: int = 0
+
+
+ET = ZoneInfo("America/New_York")
+REGULAR_CLOSE_ET = dtime(16, 0)
+SETTLE_MINUTES = 10          # data needs a few minutes to finalise post-bell
+
+
+def provisional_bar_date(now: Optional[datetime] = None):
+    """The date whose bar is still FORMING right now, or None.
+
+    yfinance returns a row for the current session while it is still
+    trading. That row looks exactly like a finished bar — real open, high,
+    low, and a "close" that is simply the last trade — so nothing about its
+    shape reveals that the day is not over.
+
+    Evaluating it computes RSI(2) on a price that is still moving. The
+    2026-08-26 incident: at 15:02 ET, XLK's in-progress bar gave RSI(2)
+    70.6 (EXIT) while the last COMPLETED bar gave 46.9 (hold), and the
+    value drifted from 66.5 to 70.6 within the same hour. The report was
+    inventing an exit that did not exist.
+
+    This is the mirror of the NaN-placeholder bug fixed on 2026-08-03.
+    That one failed CLOSED (suppressed real signals and looked like a quiet
+    market). This one fails OPEN — it manufactures signals — which is worse,
+    because acting on it spends money.
+
+    Conservative by construction: on an early-close day (1pm ET holidays)
+    the session is genuinely over but this still calls the bar provisional,
+    so the report falls back to the prior close. Being a day late is a
+    recoverable error; trading a half-formed bar is not.
+    """
+    now_et = (now or datetime.now(tz=ET)).astimezone(ET)
+    if now_et.weekday() >= 5:            # weekend — no session forming
+        return None
+    cutoff = now_et.replace(hour=REGULAR_CLOSE_ET.hour,
+                            minute=REGULAR_CLOSE_ET.minute,
+                            second=0, microsecond=0) + timedelta(
+                                minutes=SETTLE_MINUTES)
+    return now_et.date() if now_et < cutoff else None
+
+
+def drop_provisional(bars: pd.DataFrame,
+                     now: Optional[datetime] = None) -> tuple[pd.DataFrame, bool]:
+    """Remove the still-forming session's bar, if the newest row is one."""
+    d = provisional_bar_date(now)
+    if d is None or len(bars) == 0:
+        return bars, False
+    if bars.index[-1].date() == d:
+        return bars.iloc[:-1], True
+    return bars, False
 
 
 def clean_bars(bars: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -319,17 +384,23 @@ def build_report(
     *,
     instruments: tuple[str, ...] = LIVE_INSTRUMENTS,
     today: Optional[str] = None,
+    now: Optional[datetime] = None,
 ) -> dict:
     """Everything the appendix asks for, as data. Rendering is separate."""
     states: dict[str, InstrumentState] = {}
     stale: list[str] = []
     dropped_rows: dict[str, int] = {}
+    provisional_dropped: list[str] = []
     for t in instruments:
         b = bars_by_ticker.get(t)
         if b is not None:
             b, dropped = clean_bars(b)
             if dropped:
                 dropped_rows[t] = dropped
+            # Drop the still-forming session BEFORE any indicator is built.
+            b, was_provisional = drop_provisional(b, now)
+            if was_provisional:
+                provisional_dropped.append(t)
         if b is None or len(b) < 201:
             stale.append(t)
             continue
@@ -452,6 +523,8 @@ def build_report(
         "sessions_behind": sessions_behind,
         "is_stale": is_stale,
         "incomplete_bars_dropped": dropped_rows,
+        "provisional_bars_dropped": sorted(provisional_dropped),
+        "market_still_open": provisional_bar_date(now) is not None,
         "instruments_missing_data": stale,
         "instruments_lagging": lagging,
         "eligible_above_sma200": sorted(eligible),
@@ -528,6 +601,14 @@ def render_report(r: dict) -> str:
     if r["incomplete_bars_dropped"]:
         A(f"note: dropped incomplete bars (NaN close, usually the still-open "
           f"session): {r['incomplete_bars_dropped']}")
+        A("")
+    if r["provisional_bars_dropped"]:
+        A(f"note: the US market is still open, so today's half-formed bar was "
+          f"DROPPED for {len(r['provisional_bars_dropped'])} instrument(s).")
+        A(f"      This report is based on the last COMPLETED session "
+          f"({r['as_of']}), which is correct — RSI(2) on an unfinished bar")
+        A(f"      moves with every tick and invents signals. Re-run after "
+          f"16:10 ET to include today.")
         A("")
 
     # 1 — entries
