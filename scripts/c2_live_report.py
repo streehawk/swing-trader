@@ -41,7 +41,7 @@ from core.c2_live import (                                    # noqa: E402
 )
 from core.c2_live_log import (                                # noqa: E402
     EQUITY_COLUMNS, LOG_COLUMNS, SKIP_COLUMNS, ensure_log, k2_status,
-    k3_review, reconcile, render_review,
+    k3_review, reconcile, render_review, render_validation, validate_log,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -178,6 +178,22 @@ def cmd_reconcile(args) -> int:
     return 0
 
 
+def cmd_check(args) -> int:
+    """Validate the two hand-maintained files against each other."""
+    try:
+        pos = load_positions(args.positions)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"positions.json: {e}")
+        return 1
+    problems = validate_log(args.log, pos)
+    print(render_validation(problems))
+    print()
+    print(f"positions: {len(pos.open)} open, {len(pos.pending_entries)} pending "
+          f"entr(y/ies), {len(pos.pending_exits)} pending exit(s) — "
+          f"{pos.slots_used}/3 slots used")
+    return 1 if any(p["severity"] == "ERROR" for p in problems) else 0
+
+
 def cmd_review(args) -> int:
     pos = load_positions(args.positions)
     r = k3_review(args.log, pos.account_equity, start_date=args.start)
@@ -195,6 +211,8 @@ def main() -> int:
     ap.add_argument("--reconcile", action="store_true",
                     help="fill in true slippage against the actual opens")
     ap.add_argument("--review", action="store_true", help="the K3 review table")
+    ap.add_argument("--check", action="store_true",
+                    help="validate positions.json and trade_log.csv")
     ap.add_argument("--offline", action="store_true",
                     help="reuse the cached prices, no network call")
     ap.add_argument("--positions", default=str(POSITIONS))
@@ -206,6 +224,8 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     if args.init_positions:
         return cmd_init(args)
+    if args.check:
+        return cmd_check(args)
     if args.reconcile:
         return cmd_reconcile(args)
     if args.review:

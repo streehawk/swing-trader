@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -237,6 +238,120 @@ def k3_review(log_path, account_equity: float,
         "verdict": verdict,
         "verdict_reason": why,
     }
+
+
+def validate_log(log_path, positions=None) -> list[dict]:
+    """Cross-check the hand-maintained log. Returns a list of problems.
+
+    Exists because every error found so far has been a transcription slip
+    that the system could not see: shares swapped between two rows, a
+    pre-filled slippage reference that blocked reconcile, an empty pending
+    row eating a slot. None of them raise; all of them corrupt the record
+    the quarter is being judged on.
+
+    Severity: "ERROR" = the number is wrong. "WARN" = suspicious but
+    possibly deliberate.
+    """
+    problems: list[dict] = []
+
+    def add(sev, row, msg):
+        problems.append({"severity": sev, "row": row, "message": msg})
+
+    raw = Path(log_path)
+    if not raw.exists():
+        return [{"severity": "ERROR", "row": None,
+                 "message": f"{log_path} not found"}]
+    df = read_log(log_path)
+    if df.empty:
+        return []
+
+    # ── Dates must be unambiguous ISO ────────────────────────────────
+    # Excel rewrites 2026-08-25 as 8/25/26 on save. That parses today only
+    # because every day-of-month so far exceeds 12; the first trade on the
+    # 9th of a month becomes silently ambiguous between US and EU order.
+    for i, v in df["date"].items():
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v).strip()):
+            add("ERROR", i + 2,
+                f"date {v!r} is not ISO YYYY-MM-DD — a spreadsheet has "
+                f"reformatted it; ambiguous once a day-of-month is <= 12")
+    for i, v in df["signal_date"].items():
+        if pd.notna(v) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v).strip()):
+            add("ERROR", i + 2, f"signal_date {v!r} is not ISO YYYY-MM-DD")
+
+    # ── Per-row arithmetic ───────────────────────────────────────────
+    for i, r in df.iterrows():
+        row, tkr = i + 2, str(r.get("ticker", "?"))
+        side = str(r.get("side", "")).strip().lower()
+        px, sh = r.get("actual_fill_price"), r.get("shares")
+
+        if side not in ("entry", "exit"):
+            add("ERROR", row, f"side {r.get('side')!r} must be entry or exit")
+        if pd.notna(px) and pd.notna(sh) and pd.notna(r.get("dollar_amount")):
+            want = float(px) * float(sh)
+            if abs(want - float(r["dollar_amount"])) > 0.05:
+                add("ERROR", row,
+                    f"{tkr} dollar_amount {r['dollar_amount']} != "
+                    f"{sh} x {px} = {want:.2f}")
+        if pd.notna(px) and pd.isna(r.get("modeled_open_price")):
+            add("WARN", row, f"{tkr} not reconciled yet — run ./c2 --reconcile")
+        if side == "exit" and pd.isna(r.get("pl_on_exit")):
+            add("ERROR", row, f"{tkr} exit row has no pl_on_exit")
+        if side == "exit" and pd.isna(r.get("days_held")):
+            add("ERROR", row, f"{tkr} exit row has no days_held")
+
+    # ── Entry/exit pairing ───────────────────────────────────────────
+    # An exit sells exactly what the entry bought. A mismatch here is the
+    # 2026-08-27 error: two exits filed on the same day with each other's
+    # share counts.
+    for tkr, g in df.groupby("ticker"):
+        ent = g[g["side"].astype(str).str.lower() == "entry"]
+        ext = g[g["side"].astype(str).str.lower() == "exit"]
+        for k in range(min(len(ent), len(ext))):
+            e, x = ent.iloc[k], ext.iloc[k]
+            if pd.notna(e["shares"]) and pd.notna(x["shares"]) and \
+                    abs(float(e["shares"]) - float(x["shares"])) > 1e-6:
+                add("ERROR", None,
+                    f"{tkr}: exit sells {x['shares']} shares but the entry "
+                    f"bought {e['shares']} — share counts do not match")
+            if pd.notna(x.get("pl_on_exit")) and pd.notna(e.get("actual_fill_price")) \
+                    and pd.notna(x.get("actual_fill_price")) and pd.notna(x["shares"]):
+                want = (float(x["actual_fill_price"])
+                        - float(e["actual_fill_price"])) * float(x["shares"])
+                if abs(want - float(x["pl_on_exit"])) > 0.05:
+                    add("ERROR", None,
+                        f"{tkr}: pl_on_exit {x['pl_on_exit']} != "
+                        f"({x['actual_fill_price']} - {e['actual_fill_price']}) "
+                        f"x {x['shares']} = {want:.2f}")
+
+    # ── Cross-check against the positions file ───────────────────────
+    if positions is not None:
+        logged_open = set()
+        for tkr, g in df.groupby("ticker"):
+            n_e = (g["side"].astype(str).str.lower() == "entry").sum()
+            n_x = (g["side"].astype(str).str.lower() == "exit").sum()
+            if n_e > n_x:
+                logged_open.add(str(tkr))
+        held = {p.ticker for p in positions.open}
+        for t in sorted(logged_open - held):
+            add("ERROR", None,
+                f"{t}: the log shows an unclosed entry but it is not in "
+                f"positions.json `open` — either the exit row is missing or "
+                f"the position was deleted too early")
+        for t in sorted(held - logged_open):
+            add("ERROR", None,
+                f"{t}: held in positions.json but the log has no open entry "
+                f"for it")
+    return problems
+
+
+def render_validation(problems: list[dict]) -> str:
+    if not problems:
+        return "VALIDATION: clean — positions.json and trade_log.csv agree."
+    L = ["VALIDATION FOUND %d PROBLEM(S)" % len(problems), "-" * 66]
+    for p in problems:
+        where = f"line {p['row']}" if p["row"] else "cross-row"
+        L.append(f"  [{p['severity']:5}] {where:11} {p['message']}")
+    return "\n".join(L)
 
 
 def render_review(r: dict) -> str:
