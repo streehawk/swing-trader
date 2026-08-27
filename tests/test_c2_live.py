@@ -545,6 +545,54 @@ class TestPositionsFile:
         assert pf.slots_used == 2 and pf.slots_free == 1
         assert pf.held_tickers == {"XLK", "XLV"}
 
+    def test_pending_exit_does_not_consume_an_extra_slot(self):
+        # The position being sold is still in `open` and holds its own slot
+        # until the sale fills (§1). Counting both would report 3/3 used on
+        # a 2-position book and suppress a real entry signal.
+        pf = PositionsFile(
+            open=[Position("XLK", "a", "b", 1.0, 1.0),
+                  Position("XLI", "a", "b", 1.0, 1.0)],
+            pending=[{"ticker": "XLK", "side": "exit"}])
+        assert pf.slots_used == 2
+        assert pf.slots_free == 1
+
+    def test_pending_entry_still_consumes_a_slot(self):
+        pf = PositionsFile(open=[Position("XLK", "a", "b", 1.0, 1.0)],
+                           pending=[{"ticker": "XLV", "side": "entry"}])
+        assert pf.slots_used == 2 and pf.slots_free == 1
+
+    def test_missing_side_counts_as_an_entry(self):
+        # Errs toward occupying a slot: suppresses a signal rather than
+        # over-committing capital.
+        pf = PositionsFile(open=[], pending=[{"ticker": "XLV"}])
+        assert pf.slots_used == 1
+
+    def test_entries_and_exits_are_partitioned(self):
+        pf = PositionsFile(open=[], pending=[
+            {"ticker": "A", "side": "entry"},
+            {"ticker": "B", "side": "exit"},
+            {"ticker": "C"}])
+        assert len(pf.pending_entries) == 2      # A and C
+        assert len(pf.pending_exits) == 1        # B
+
+    def test_ticker_with_a_pending_exit_is_not_re_signalled(self):
+        # You cannot buy what you still own and are selling.
+        pf = PositionsFile(open=[Position("XLK", "a", "b", 1.0, 1.0)],
+                           pending=[{"ticker": "XLK", "side": "exit"}])
+        assert "XLK" in pf.held_tickers
+
+    def test_report_marks_a_position_with_a_placed_sell_order(self):
+        bars = {t: bars_from(list(100 * (1.0015 ** np.arange(300))))
+                for t in LIVE_INSTRUMENTS}
+        bars["XLK"] = bars_from(rising_then_pop())
+        last = str(bars["XLK"].index[-1].date())
+        pos = flat_positions(
+            open=[Position("XLK", str(bars["XLK"].index[-7].date()),
+                           str(bars["XLK"].index[-6].date()), 100.0, 10.0)],
+            pending=[{"ticker": "XLK", "side": "exit"}])
+        txt = render_report(build_report(bars, pos, today=last))
+        assert "SELL ORDER PLACED" in txt
+
 
 # ─────────────────────────────────────────────────────────────────────
 # Slippage, K2, K3

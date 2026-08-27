@@ -148,9 +148,30 @@ class PositionsFile:
     path:           Optional[str] = None
 
     @property
+    def pending_entries(self) -> list[dict]:
+        """Pending BUY orders — the only kind that claims an extra slot.
+
+        A pending EXIT does not: the position it sells is still sitting in
+        `open` and is already holding that slot until the sale fills (§1,
+        "a slot frees the session AFTER its exit fills"). Counting both
+        would take a book of 2 positions with 1 pending exit to 3 slots
+        used and 0 free, suppressing a legitimate new entry signal.
+
+        A row with a missing or unrecognised `side` counts as an entry.
+        That errs toward occupying a slot, which suppresses a signal rather
+        than over-committing capital — the safe direction to be wrong.
+        """
+        return [q for q in self.pending
+                if not str(q.get("side", "")).strip().lower().startswith("exit")]
+
+    @property
+    def pending_exits(self) -> list[dict]:
+        return [q for q in self.pending if q not in self.pending_entries]
+
+    @property
     def slots_used(self) -> int:
-        """Open positions AND placed-but-unconfirmed orders both hold a slot."""
-        return len(self.open) + len(self.pending)
+        """Open positions plus pending BUYS. See `pending_entries`."""
+        return len(self.open) + len(self.pending_entries)
 
     @property
     def slots_free(self) -> int:
@@ -532,7 +553,8 @@ def build_report(
         "slots": {
             "total": SLOTS,
             "open": len(positions.open),
-            "pending": len(positions.pending),
+            "pending": len(positions.pending_entries),
+            "pending_exits": len(positions.pending_exits),
             "free": free,
             "slot_dollars": positions.slot_dollars,
             "recommended_slot_dollars": rec_slot,
@@ -661,8 +683,14 @@ def render_report(r: dict) -> str:
         A(f"   !! Monthly resize due: account/3 rounded down is "
           f"${s['recommended_slot_dollars']:,.0f}, you are using "
           f"${s['slot_dollars']:,.0f} (§1 — change at the monthly mark, not today)")
+    sell_placed = {str(q.get("ticker", "")).upper()
+                   for q in r["pending_orders"]
+                   if str(q.get("side", "")).lower().startswith("exit")}
     for p in r["positions"]:
-        flag = "  <- EXIT" if p["exit_now"] else ""
+        if p["ticker"] in sell_placed:
+            flag = "  <- SELL ORDER PLACED, awaiting fill"
+        else:
+            flag = "  <- EXIT" if p["exit_now"] else ""
         A(f"   {p['ticker']:5s} in {p['entry_date']} @ ${p['entry_price']:.4f} "
           f"x{p['shares']:.4f}  day {p['days_held_from_entry']}  "
           f"${p['market_value']:,.2f}  {p['unrealized_pct']:+.2f}%{flag}")
@@ -674,8 +702,11 @@ def render_report(r: dict) -> str:
             if left <= 5:
                 A(f"         valve fires in {left} session(s)")
     for q in r["pending_orders"]:
+        is_exit = str(q.get("side", "")).lower().startswith("exit")
+        tail = ("— the position still holds its slot until this fills"
+                if is_exit else "— holds a slot, not a position")
         A(f"   PENDING {q.get('ticker','?')} {q.get('side','?')} "
-          f"(signal {q.get('signal_date','?')}) — holds a slot, not a position")
+          f"(signal {q.get('signal_date','?')}) {tail}")
     A("")
 
     # 4 — slippage reference
