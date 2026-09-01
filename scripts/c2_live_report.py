@@ -64,6 +64,18 @@ def fetch_prices(tickers=LIVE_INSTRUMENTS, retries: int = 3) -> pd.DataFrame:
     An unadjusted ex-dividend day prints as a loss nobody took, and RSI(2)
     is computed on exactly two days of change — it would read that as a real
     signal.
+
+    `open_raw` IS ALSO STORED, and it is what `--reconcile` compares your
+    fill against. The two prices in a slippage calculation must be the same
+    kind of price: your fill is what you actually paid, unadjusted, so the
+    reference must be the unadjusted opening print.
+
+    Adjusted and raw agree until a dividend goes ex, at which point
+    yfinance retroactively scales every PRIOR bar down. Measured on this
+    basket: XLE bars from six months ago differ by -1.36%, XLI by -0.53%,
+    XLK by -0.24%. Reconciling an old fill against an adjusted open would
+    therefore manufacture up to 1.4% of slippage — more than five times
+    the 0.25% K2 limit — and pause live trading over a dividend.
     """
     import yfinance as yf
 
@@ -84,6 +96,19 @@ def fetch_prices(tickers=LIVE_INSTRUMENTS, retries: int = 3) -> pd.DataFrame:
                 df.index.name = "date"
                 df = df.reset_index()
                 df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+
+                raw = yf.download(t, period=FETCH_PERIOD, auto_adjust=False,
+                                  progress=False, actions=False)
+                if raw is not None and len(raw):
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        raw.columns = raw.columns.get_level_values(0)
+                    r = raw.rename(columns=str.lower)[["open"]].copy()
+                    r.index.name = "date"
+                    r = r.reset_index()
+                    r["date"] = pd.to_datetime(r["date"]).dt.tz_localize(None)
+                    df = df.merge(r.rename(columns={"open": "open_raw"}),
+                                  on="date", how="left")
+
                 df["ticker"] = t
                 frames.append(df)
                 break
@@ -106,7 +131,8 @@ def fetch_prices(tickers=LIVE_INSTRUMENTS, retries: int = 3) -> pd.DataFrame:
 def to_by_ticker(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
-    cols = ["open", "high", "low", "close", "volume"]
+    cols = [c for c in ("open", "high", "low", "close", "volume", "open_raw")
+            if c in df.columns]
     return {str(t): g.sort_values("date").set_index("date")[cols].copy()
             for t, g in df.groupby("ticker", sort=True)}
 
@@ -185,7 +211,11 @@ def cmd_check(args) -> int:
     except (FileNotFoundError, ValueError) as e:
         print(f"positions.json: {e}")
         return 1
-    problems = validate_log(args.log, pos)
+    try:
+        bars = load_prices(offline=True)
+    except FileNotFoundError:
+        bars = None
+    problems = validate_log(args.log, pos, bars)
     print(render_validation(problems))
     print()
     print(f"positions: {len(pos.open)} open, {len(pos.pending_entries)} pending "

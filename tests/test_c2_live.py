@@ -624,6 +624,35 @@ class TestSlippage:
     def test_official_open_of_a_non_session_is_none(self):
         assert official_open(bars_from([100, 101]), "2099-01-01") is None
 
+    def test_official_open_prefers_the_raw_price(self):
+        # A fill is an unadjusted price, so its reference must be too.
+        # After an ex-dividend, `open` is rescaled but `open_raw` is not;
+        # using the adjusted one would fabricate slippage.
+        b = bars_from([100.0, 101.0, 102.0])
+        b["open_raw"] = b["open"] * 1.01          # adjusted sits 1% below raw
+        d = str(b.index[1].date())
+        assert official_open(b, d) == pytest.approx(float(b["open_raw"].iloc[1]))
+
+    def test_official_open_falls_back_when_raw_is_absent(self):
+        b = bars_from([100.0, 101.0, 102.0])
+        assert "open_raw" not in b.columns
+        d = str(b.index[1].date())
+        assert official_open(b, d) == pytest.approx(float(b["open"].iloc[1]))
+
+    def test_official_open_falls_back_when_raw_is_nan(self):
+        b = bars_from([100.0, 101.0, 102.0])
+        b["open_raw"] = np.nan
+        d = str(b.index[1].date())
+        assert official_open(b, d) == pytest.approx(float(b["open"].iloc[1]))
+
+    def test_adjusted_reference_would_fabricate_slippage(self):
+        # Documents the size of the bug this guards against: a -1% dividend
+        # rescale turns a perfect fill into 1% of apparent slippage, four
+        # times the 0.25% K2 limit.
+        fill = 100.0
+        assert slippage_pct(fill, 100.0, "entry") == pytest.approx(0.0)
+        assert slippage_pct(fill, 99.0, "entry") > 1.0
+
 
 class TestReconcile:
     def _log(self, tmp_path, bars):

@@ -101,14 +101,31 @@ def slippage_pct(fill: float, reference: float, side: str) -> Optional[float]:
 
 
 def official_open(bars: pd.DataFrame, date: str) -> Optional[float]:
-    """The session's actual official open — the K2 reference price."""
+    """The session's actual official open — the K2 reference price.
+
+    Prefers `open_raw` (unadjusted). Slippage compares two prices and they
+    must be the same kind: the fill is what you actually paid, so the
+    reference has to be the unadjusted opening print. Dividend-adjusted
+    bars are retroactively rescaled every time a distribution goes ex —
+    measured on this basket, six-month-old opens shift by up to -1.36% —
+    which would fabricate slippage far beyond the 0.25% K2 limit and pause
+    trading over a dividend.
+
+    Falls back to `open` for caches written before `open_raw` existed. That
+    is correct for any fill reconciled before the next ex-dividend date,
+    which is every fill so far, and is why prompt reconciling matters.
+    """
     idx = bars.index
     target = pd.Timestamp(date)
     pos = int(np.searchsorted(idx.values, np.datetime64(target)))
     if pos >= len(idx) or idx[pos] != target:
         return None
-    v = float(pd.to_numeric(bars["open"], errors="coerce").iloc[pos])
-    return v if np.isfinite(v) else None
+    for col in ("open_raw", "open"):
+        if col in bars.columns:
+            v = float(pd.to_numeric(bars[col], errors="coerce").iloc[pos])
+            if np.isfinite(v):
+                return v
+    return None
 
 
 def reconcile(log_path, bars_by_ticker: dict[str, pd.DataFrame]) -> dict:
@@ -240,7 +257,24 @@ def k3_review(log_path, account_equity: float,
     }
 
 
-def validate_log(log_path, positions=None) -> list[dict]:
+def trading_days_between(bars: pd.DataFrame, start: str, end: str) -> Optional[int]:
+    """Sessions from `start` to `end`, the backtest's `bars_held` convention.
+
+    Trading days, never calendar days. A weekend inflates a 3-session hold
+    to 5, and `days_held` is what the K3 review compares against the
+    backtest's ~4-day expectation — so a calendar count would make the live
+    system look slower than it is and could swing a CONTINUE/STOP call.
+    """
+    idx = bars.index
+    a, b = pd.Timestamp(start), pd.Timestamp(end)
+    pa = int(np.searchsorted(idx.values, np.datetime64(a)))
+    pb = int(np.searchsorted(idx.values, np.datetime64(b)))
+    if pa >= len(idx) or pb >= len(idx) or idx[pa] != a or idx[pb] != b:
+        return None
+    return pb - pa
+
+
+def validate_log(log_path, positions=None, bars_by_ticker=None) -> list[dict]:
     """Cross-check the hand-maintained log. Returns a list of problems.
 
     Exists because every error found so far has been a transcription slip
@@ -322,6 +356,17 @@ def validate_log(log_path, positions=None) -> list[dict]:
                         f"{tkr}: pl_on_exit {x['pl_on_exit']} != "
                         f"({x['actual_fill_price']} - {e['actual_fill_price']}) "
                         f"x {x['shares']} = {want:.2f}")
+            # days_held must be TRADING days, matching the backtest.
+            if bars_by_ticker is not None and pd.notna(x.get("days_held")):
+                b = bars_by_ticker.get(str(tkr).upper())
+                if b is not None:
+                    n = trading_days_between(b, str(e["date"]), str(x["date"]))
+                    if n is not None and int(n) != int(x["days_held"]):
+                        add("ERROR", None,
+                            f"{tkr}: days_held {int(x['days_held'])} but "
+                            f"{e['date']} -> {x['date']} is {n} TRADING day(s) "
+                            f"— a weekend was counted; K3 compares this to the "
+                            f"backtest's ~4-day hold")
 
     # ── Cross-check against the positions file ───────────────────────
     if positions is not None:
