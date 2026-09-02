@@ -328,6 +328,23 @@ def validate_log(log_path, positions=None, bars_by_ticker=None) -> list[dict]:
                     f"{sh} x {px} = {want:.2f}")
         if pd.notna(px) and pd.isna(r.get("modeled_open_price")):
             add("WARN", row, f"{tkr} not reconciled yet — run ./c2 --reconcile")
+
+        # The reference must be the SESSION'S OPEN, not a copy of the fill.
+        # Typing the fill into both columns forces slippage to exactly 0.00%
+        # by construction, so K2 can never see a bad execution — the one
+        # thing it exists to detect. Verified against the price data rather
+        # than trusted.
+        ref = r.get("modeled_open_price")
+        if bars_by_ticker is not None and pd.notna(ref):
+            b = bars_by_ticker.get(tkr.upper())
+            if b is not None:
+                real = official_open(b, str(r.get("date")))
+                if real is not None and abs(float(ref) - real) > 0.005:
+                    add("ERROR", row,
+                        f"{tkr} modeled_open_price {float(ref):.4f} is not the "
+                        f"session's open {real:.4f} — leave this column BLANK "
+                        f"and let ./c2 --reconcile fill it; copying the fill "
+                        f"price here forces slippage to 0.00% and blinds K2")
         if side == "exit" and pd.isna(r.get("pl_on_exit")):
             add("ERROR", row, f"{tkr} exit row has no pl_on_exit")
         if side == "exit" and pd.isna(r.get("days_held")):
