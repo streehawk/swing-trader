@@ -621,8 +621,31 @@ def render_report(r: dict) -> str:
         A("!" * 72)
         A("")
     if r["incomplete_bars_dropped"]:
-        A(f"note: dropped incomplete bars (NaN close, usually the still-open "
-          f"session): {r['incomplete_bars_dropped']}")
+        n = len(r["incomplete_bars_dropped"])
+        if r["market_still_open"]:
+            A(f"note: dropped {n} incomplete bar(s) with no close — the US "
+              f"market is still open, which is the expected reason.")
+            A(f"      Re-run after 16:10 ET to include today.")
+        else:
+            # The session is over but the provider has not published a close.
+            # Open/high/low/volume can all be present and the close still be
+            # missing; RSI(2) is a function of closes, so the day cannot be
+            # scored at all. Say so loudly: "no signals" here may only mean
+            # "today was never checked".
+            A("!" * 72)
+            A(f"DATA GAP — the market has closed, but the price provider has "
+              f"published NO CLOSE for {n} instrument(s).")
+            A(f"  This report is therefore computed on {r['as_of']}, NOT on "
+              f"the session that just ended.")
+            A("  RSI(2) is a function of closing prices, so today could not be")
+            A("  scored. 'No entry signals' below means 'today was not")
+            A("  checked' — it is NOT an all-clear for today.")
+            A("  WAIT and re-run. Do not substitute a live quote or an")
+            A("  intraday price for the official close (protocol section 5).")
+            A("  If it is still missing by tomorrow morning, protocol section 2")
+            A("  applies: act before 9:25am ET on a completed report, or skip")
+            A("  the session and log it in skipped_signals.csv.")
+            A("!" * 72)
         A("")
     if r["provisional_bars_dropped"]:
         A(f"note: the US market is still open, so today's half-formed bar was "
