@@ -36,7 +36,14 @@ _CACHE_FILE = _CACHE_DIR / "ml_universe_cache.json"
 _CACHE_DAYS = 7
 
 # Static US universe JSON committed to the repository
-_US_STATIC_FILE = Path(__file__).parent / "us_universe_static.json"
+# BUGFIX 2026-07-30: was `Path(__file__).parent`, which resolves to core/ —
+# but us_universe_static.json lives at the REPO ROOT. _load_us_static()
+# therefore logged a warning and returned [] on every call, silently shrinking
+# get_ml_universe()/get_full_universe() from ~1,500 tickers to whatever the
+# Wikipedia scrapes returned. Identical to the bug documented at
+# core/core_radar.py:30-34, where one missing `.parent` hid the entire CORE
+# universe from production.
+_US_STATIC_FILE = Path(__file__).parent.parent / "us_universe_static.json"
 
 # ─────────────────────────────────────────────────────────────────────────
 # US equity benchmarks + US sector ETFs only.

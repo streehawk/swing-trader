@@ -1,0 +1,79 @@
+Step 2 complete. The result is unusual and needs the mechanism explained, not just the table.
+
+Results — B0 through B4
+
+┌─────┬──────────────┬───────┬──────┬────────┬──────┬───────┬────────┬───────────┬──────────┬──────┬──────┐
+│ Run │   Strategy   │ Regim │ Cost │ #Trade │ Win% │ AvgWi │ AvgLos │ Expectanc │ Breakeve │ MaxD │  PF  │
+│     │              │   e   │  s   │   s    │      │  n R  │  s R   │     y     │  n Win%  │  D   │      │
+├─────┼──────────────┼───────┼──────┼────────┼──────┼───────┼────────┼───────────┼──────────┼──────┼──────┤
+│ B0  │ trend_pullba │ on    │ 10bp │ 666    │ 36.2 │ +1.49 │ −0.86  │ −0.009    │ 36.6%    │ 12.5 │ 0.98 │
+│     │ ck           │       │ s    │        │ %    │       │        │           │          │ %    │ 3    │
+├─────┼──────────────┼───────┼──────┼────────┼──────┼───────┼────────┼───────────┼──────────┼──────┼──────┤
+│ B1  │ dip_in_uptre │ off   │ none │ 0      │ —    │ —     │ —      │ —         │ —        │ —    │ —    │
+│     │ nd           │       │      │        │      │       │        │           │          │      │      │
+├─────┼──────────────┼───────┼──────┼────────┼──────┼───────┼────────┼───────────┼──────────┼──────┼──────┤
+│ B2  │ dip_in_uptre │ on    │ none │ 0      │ —    │ —     │ —      │ —         │ —        │ —    │ —    │
+│     │ nd           │       │      │        │      │       │        │           │          │      │      │
+├─────┼──────────────┼───────┼──────┼────────┼──────┼───────┼────────┼───────────┼──────────┼──────┼──────┤
+│ B3  │ dip_in_uptre │ off   │ none │ 0      │ —    │ —     │ —      │ —         │ —        │ —    │ —    │
+│     │ nd           │       │      │        │      │       │        │           │          │      │      │
+├─────┼──────────────┼───────┼──────┼────────┼──────┼───────┼────────┼───────────┼──────────┼──────┼──────┤
+│ B4  │ dip_in_uptre │ off   │ 15bp │ 0      │ —    │ —     │ —      │ —         │ —        │ —    │ —    │
+│     │ nd           │       │ s    │        │      │       │        │           │          │      │      │
+└─────┴──────────────┴───────┴──────┴────────┴──────┴───────┴────────┴───────────┴──────────┴──────┴──────┘
+
+All runs SURVIVOR universe / upper-bound only. B0, B3 and B4 were specified as point-in-time; no delisted dataset exists, so they ran on the survivor cache and are labelled accordingly. B2→B3 survivorship attribution is not measurable.
+
+VERDICT: FAIL
+
+┌────────────────────────┬─────────────────────┬──────────────────────┐
+│     Gate criterion     │       Result        │                      │
+├────────────────────────┼─────────────────────┼──────────────────────┤
+│ expectancy ≥ +0.10R    │ +0.000R (no sample) │ ❌                   │
+├────────────────────────┼─────────────────────┼──────────────────────┤
+│ #trades ≥ 300          │ 0                   │ ❌                   │
+├────────────────────────┼─────────────────────┼──────────────────────┤
+│ profit factor ≥ 1.2    │ undefined           │ ❌                   │
+├────────────────────────┼─────────────────────┼──────────────────────┤
+│ beats B0 on expectancy │ 0.000 vs −0.009     │ ⚠️ artefact — ignore │
+└────────────────────────┴─────────────────────┴──────────────────────┘
+
+That last row nominally passes only because zero is arithmetically greater than −0.009. It is not a result and must not be read as one.
+
+Why zero — the census
+
+I ran a full-universe gate census (240 tickers, 293,361 bars) because a zero-trade verdict is worthless without knowing whether it's scarcity or a bug:
+
+┌────────────────────┬─────────┬────────┐
+│ First gate failed  │  Bars   │ Share  │
+├────────────────────┼─────────┼────────┤
+│ RVOL > 1.5         │ 253,462 │ 86.4%  │
+├────────────────────┼─────────┼────────┤
+│ ≥5% pop over SMA20 │ 25,852  │ 8.8%   │
+├────────────────────┼─────────┼────────┤
+│ avg volume ≥ 200k  │ 8,043   │ 2.7%   │
+├────────────────────┼─────────┼────────┤
+│ close < SMA50      │ 5,176   │ 1.8%   │
+├────────────────────┼─────────┼────────┤
+│ price ≥ $10        │ 811     │ 0.3%   │
+├────────────────────┼─────────┼────────┤
+│ structure ≥ 2R     │ 17      │ 0.006% │
+├────────────────────┼─────────┼────────┤
+│ passed everything  │ 0       │ —      │
+└────────────────────┴─────────┴────────┘
+
+The core signal (P1B-1) alone fires on 254 bars in 5.5 years — 0.087%. Only 17 survived exclusions + volume + RVOL + signal to reach the structure gate, and all 17 failed it.
+
+It isn't a bug. RVOL is textbook-correct on this data: median 0.90, P(RVOL>1.0)=39%, P(RVOL>1.5)=10.4%. And B0 reproduced the Phase 4 Phase-1 benchmark to the decimal (666 trades, −0.009R), confirming the harness is wired correctly.
+
+And it isn't my MAX_TARGET_ATR choice. Stru even removing it entirely caps you at 17
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ go ahead and scope th
+What I'd suggest, and what I won't do
+
+I will not loosen the 5% / 1.5 RVOL / 200k thresholds to manufacture trades. That's the parameter mining the spec forbids, and with 17 candidates as the ceiling it would take gutting the rules to reach a sample — at which point you'd be testing a different strategy.
+
+The legitimate next step is a broader universe: this needs small/mid caps where these moves actually happen. That means fetching price history beyond the 241-name cache — a real data task, not a threshold tweak. Say the word and I'll scope it.
+
+Nothing is committed. 53 Phase 1B tests pass, full suite 409, zero regressions, Phase 1 still provably untouched.
